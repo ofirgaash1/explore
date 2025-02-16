@@ -97,6 +97,10 @@ def search():
             results_html += f'''
                 <div class="result-item">
                     <p>{r['text']}</p>
+                    <audio controls>
+                        <source src="/static/audio.ogg#t={r['start']}" type="audio/ogg">
+                        Your browser does not support the audio element.
+                    </audio>
                 </div>
             '''
     else:
@@ -117,6 +121,10 @@ def search():
                     padding: 10px;
                     background-color: #f5f5f5;
                     border-radius: 4px;
+                }}
+                audio {{
+                    width: 100%;
+                    margin-top: 10px;
                 }}
             </style>
         </head>
