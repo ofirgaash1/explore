@@ -163,13 +163,13 @@ def search():
                     </div>
                     <div id="{source}-results" class="source-results" style="display: none;">
                         {''.join(f"""
-                            <div class="result-item">
-                                <p>{r['text']}</p>
-                                <div class="audio-debug">
-                                    <p>Audio URL: {audio_url}#t={r['start']}</p>
-                                    <p><a href="/check-audio/{audio_filename}" target="_blank">Check audio file</a></p>
+                            <div class="result-item" data-start="{r['start']}" data-source="{source}">
+                                <div class="navigation-controls">
+                                    <button onclick="prevSegment(this)" class="nav-button">← Previous Segment</button>
+                                    <button onclick="nextSegment(this)" class="nav-button">Next Segment →</button>
                                 </div>
-                                <audio controls preload="metadata">
+                                <p class="result-text">{r['text']}</p>
+                                <audio controls preload="metadata" data-current-time="{r['start']}">
                                     <source src="{audio_url}#t={r['start']}" type="audio/ogg">
                                     Your browser does not support the audio element.
                                 </audio>
@@ -271,6 +271,34 @@ def search():
                     padding: 5px 10px;
                     cursor: pointer;
                 }}
+                .navigation-controls {{
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    gap: 15px;
+                    margin: 10px 0;
+                    padding: 10px;
+                    background-color: #f8f8f8;
+                    border-radius: 4px;
+                }}
+                
+                .nav-button {{
+                    padding: 8px 16px;
+                    border: 1px solid #ddd;
+                    border-radius: 4px;
+                    background-color: white;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                }}
+                
+                .nav-button:hover {{
+                    background-color: #f0f0f0;
+                }}
+                
+                #segment-counter {{
+                    font-weight: bold;
+                    color: #666;
+                }}
             </style>
         </head>
         <body>
@@ -284,6 +312,62 @@ def search():
             </div>
             {debug_info}
             <script>
+                // Store all segments data for each source
+                const sourceSegments = {{
+                    {','.join(f"""
+                        '{source}': {json.dumps([{'start': seg['start'], 'text': seg['text']} 
+                                               for seg in load_audio_segments(available_files[source]['json_path'])['segments']])}
+                    """ for source in results_by_source.keys())}
+                }};
+                
+                function findSegmentIndex(time, segments) {{
+                    return segments.findIndex(seg => seg.start === parseFloat(time));
+                }}
+                
+                function prevSegment(button) {{
+                    const resultItem = button.closest('.result-item');
+                    const audio = resultItem.querySelector('audio');
+                    const source = resultItem.dataset.source;
+                    const currentTime = parseFloat(audio.dataset.currentTime);
+                    
+                    const segments = sourceSegments[source];
+                    const currentIndex = findSegmentIndex(currentTime, segments);
+                    
+                    if (currentIndex > 0) {{
+                        const prevSegment = segments[currentIndex - 1];
+                        updateSegment(resultItem, prevSegment, source);
+                    }}
+                }}
+                
+                function nextSegment(button) {{
+                    const resultItem = button.closest('.result-item');
+                    const audio = resultItem.querySelector('audio');
+                    const source = resultItem.dataset.source;
+                    const currentTime = parseFloat(audio.dataset.currentTime);
+                    
+                    const segments = sourceSegments[source];
+                    const currentIndex = findSegmentIndex(currentTime, segments);
+                    
+                    if (currentIndex < segments.length - 1) {{
+                        const nextSegment = segments[currentIndex + 1];
+                        updateSegment(resultItem, nextSegment, source);
+                    }}
+                }}
+                
+                function updateSegment(resultItem, segment, source) {{
+                    const audio = resultItem.querySelector('audio');
+                    const text = resultItem.querySelector('.result-text');
+                    
+                    // Update the text
+                    text.textContent = segment.text;
+                    
+                    // Update the audio
+                    audio.dataset.currentTime = segment.start;
+                    audio.src = `/audio/${{source}}.ogg#t=${{segment.start}}`;
+                    audio.currentTime = segment.start;
+                    audio.play();
+                }}
+                
                 function toggleSource(sourceId) {{
                     const resultsDiv = document.getElementById(sourceId + '-results');
                     const icon = document.getElementById('icon-' + sourceId);
@@ -291,11 +375,9 @@ def search():
                     if (resultsDiv.style.display === 'none') {{
                         resultsDiv.style.display = 'block';
                         icon.textContent = '▼';
-                        icon.classList.add('rotated');
                     }} else {{
                         resultsDiv.style.display = 'none';
                         icon.textContent = '▶';
-                        icon.classList.remove('rotated');
                     }}
                 }}
             </script>
