@@ -78,14 +78,80 @@ def home():
     return '''
     <html>
         <head>
-            <title>Text Search</title>
+            <title>ivrit.ai Explore</title>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+            <style>
+                * {
+                    margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                    font-family: 'Inter', sans-serif;
+                }
+                
+                body {
+                    background-color: #f5f7fa;
+                    color: #1a1a1a;
+                    line-height: 1.6;
+                    padding: 2rem;
+                }
+                
+                .container {
+                    max-width: 1200px;
+                    margin: 0 auto;
+                }
+                
+                h1 {
+                    color: #2d3748;
+                    margin-bottom: 2rem;
+                    font-weight: 600;
+                }
+                
+                .search-form {
+                    background: white;
+                    padding: 2rem;
+                    border-radius: 12px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                }
+                
+                input[type="text"] {
+                    width: 100%;
+                    padding: 1rem;
+                    font-size: 1rem;
+                    border: 2px solid #e2e8f0;
+                    border-radius: 8px;
+                    outline: none;
+                    transition: border-color 0.2s;
+                }
+                
+                input[type="text"]:focus {
+                    border-color: #4299e1;
+                }
+                
+                button {
+                    background-color: #4299e1;
+                    color: white;
+                    padding: 1rem 2rem;
+                    border: none;
+                    border-radius: 8px;
+                    font-size: 1rem;
+                    cursor: pointer;
+                    transition: background-color 0.2s;
+                    margin-top: 1rem;
+                }
+                
+                button:hover {
+                    background-color: #3182ce;
+                }
+            </style>
         </head>
         <body>
-            <h1>Search Text</h1>
-            <form action="/search" method="GET">
-                <input type="text" name="q" placeholder="Enter search term...">
-                <button type="submit">Search</button>
-            </form>
+            <div class="container">
+                <h1>ivrit.ai Explore</h1>
+                <form action="/search" method="GET" class="search-form">
+                    <input type="text" name="q" placeholder="Enter search term..." autofocus>
+                    <button type="submit">Search</button>
+                </form>
+            </div>
         </body>
     </html>
     '''
@@ -221,144 +287,179 @@ def search():
     <html>
         <head>
             <title>Search Results</title>
+            <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
             <style>
-                .source-group {{
-                    margin: 10px 0;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
-                }}
-                .source-header {{
-                    padding: 10px;
-                    background-color: #f8f8f8;
-                    cursor: pointer;
-                    user-select: none;
-                }}
-                .source-header:hover {{
-                    background-color: #f0f0f0;
-                }}
-                .toggle-icon {{
-                    display: inline-block;
-                    width: 20px;
-                    transition: transform 0.2s;
-                }}
-                .source-title {{
-                    font-weight: bold;
-                    margin-right: 10px;
-                }}
-                .result-count {{
-                    color: #666;
-                }}
-                .source-results {{
-                    padding: 10px;
-                }}
-                .result-item {{
-                    cursor: pointer;
-                    padding: 10px;
-                    border-bottom: 1px solid #eee;
-                    display: flex;
-                    gap: 10px;
-                }}
-                .result-item:hover {{
-                    background-color: #f5f5f5;
-                }}
-                .result-item.active {{
-                    background-color: #e6f3ff;
-                }}
-                .timestamp {{
-                    color: #666;
-                    min-width: 60px;
-                }}
-                .result-text {{
-                    flex: 1;
+                * {{
                     margin: 0;
+                    padding: 0;
+                    box-sizing: border-box;
+                    font-family: 'Inter', sans-serif;
                 }}
-                .audio-player-container {{
-                    position: sticky;
-                    top: 0;
-                    background: white;
-                    padding: 10px;
-                    border-bottom: 1px solid #ddd;
-                    z-index: 100;
+                
+                body {{
+                    background-color: #f5f7fa;
+                    color: #1a1a1a;
+                    line-height: 1.6;
+                    padding: 2rem;
                 }}
-                .audio-controls {{
-                    display: flex;
-                    gap: 10px;
+                
+                .container {{
+                    max-width: 1200px;
+                    margin: 0 auto;
+                }}
+                
+                .header {{
+                    margin-bottom: 2rem;
+                }}
+                
+                .back-link {{
+                    color: #4299e1;
+                    text-decoration: none;
+                    display: inline-flex;
                     align-items: center;
-                    margin: 10px 0;
+                    margin-bottom: 1rem;
                 }}
-                .audio-controls button {{
-                    padding: 5px 10px;
+                
+                .back-link:hover {{
+                    text-decoration: underline;
+                }}
+                
+                h1 {{
+                    color: #2d3748;
+                    margin-bottom: 1rem;
+                    font-weight: 600;
+                }}
+                
+                .stats {{
+                    background: white;
+                    padding: 1rem;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    margin-bottom: 2rem;
+                    color: #4a5568;
+                }}
+                
+                .source-group {{
+                    background: white;
+                    border-radius: 12px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+                    margin-bottom: 1.5rem;
+                    overflow: hidden;
+                }}
+                
+                .source-header {{
+                    padding: 1rem;
+                    background: #f8fafc;
                     cursor: pointer;
+                    display: flex;
+                    align-items: center;
+                    gap: 1rem;
+                    border-bottom: 1px solid #e2e8f0;
                 }}
+                
+                .source-header:hover {{
+                    background: #f1f5f9;
+                }}
+                
+                .source-title {{
+                    font-weight: 500;
+                    color: #2d3748;
+                }}
+                
+                .result-count {{
+                    color: #718096;
+                    font-size: 0.9rem;
+                }}
+                
+                .source-exports {{
+                    padding: 1rem;
+                    background: #f8fafc;
+                    display: flex;
+                    gap: 0.5rem;
+                    border-bottom: 1px solid #e2e8f0;
+                }}
+                
+                .export-button {{
+                    background: #4299e1;
+                    color: white;
+                    text-decoration: none;
+                    padding: 0.5rem 1rem;
+                    border-radius: 6px;
+                    font-size: 0.9rem;
+                    transition: background-color 0.2s;
+                }}
+                
+                .export-button:hover {{
+                    background: #3182ce;
+                }}
+                
+                .source-results {{
+                    padding: 1rem;
+                }}
+                
+                .result-item {{
+                    border-bottom: 1px solid #e2e8f0;
+                    padding: 1rem 0;
+                }}
+                
+                .result-item:last-child {{
+                    border-bottom: none;
+                }}
+                
                 .navigation-controls {{
                     display: flex;
-                    align-items: center;
-                    justify-content: center;
-                    gap: 15px;
-                    margin: 10px 0;
-                    padding: 10px;
-                    background-color: #f8f8f8;
-                    border-radius: 4px;
+                    gap: 0.5rem;
+                    margin-bottom: 1rem;
                 }}
                 
                 .nav-button {{
-                    padding: 8px 16px;
-                    border: 1px solid #ddd;
-                    border-radius: 4px;
-                    background-color: white;
+                    background: #edf2f7;
+                    border: none;
+                    padding: 0.5rem 1rem;
+                    border-radius: 6px;
+                    color: #4a5568;
                     cursor: pointer;
                     transition: background-color 0.2s;
                 }}
                 
                 .nav-button:hover {{
-                    background-color: #f0f0f0;
+                    background: #e2e8f0;
                 }}
                 
-                #segment-counter {{
-                    font-weight: bold;
-                    color: #666;
+                .result-text {{
+                    margin: 1rem 0;
+                    color: #2d3748;
+                    line-height: 1.8;
+                }}
+                
+                audio {{
+                    width: 100%;
+                    margin-top: 1rem;
+                    border-radius: 8px;
                 }}
                 
                 .export-controls {{
-                    margin: 20px 0;
-                    padding: 10px;
-                    background-color: #f8f8f8;
-                    border-radius: 4px;
+                    margin-bottom: 2rem;
                     text-align: right;
-                }}
-                
-                .source-exports {{
-                    padding: 10px;
-                    background-color: #f0f0f0;
-                    display: flex;
-                    gap: 10px;
-                }}
-                
-                .export-button {{
-                    display: inline-block;
-                    padding: 8px 16px;
-                    background-color: #4CAF50;
-                    color: white;
-                    text-decoration: none;
-                    border-radius: 4px;
-                    font-size: 14px;
-                }}
-                
-                .export-button:hover {{
-                    background-color: #45a049;
                 }}
             </style>
         </head>
         <body>
-            <h1>Search Results for: {query}</h1>
-            <a href="/">Back to Search</a>
-            <div class="stats">
-                Found {result_count} results in {file_count} files (search took {search_duration:.2f}ms)
+            <div class="container">
+                <div class="header">
+                    <a href="/" class="back-link">← Back to Search</a>
+                    <h1>Search Results for: {query}</h1>
+                </div>
+                
+                <div class="stats">
+                    Found {result_count} results in {file_count} files (search took {search_duration:.2f}ms)
+                </div>
+                
+                <div class="results">
+                    {results_html}
+                </div>
             </div>
-            <div>
-                {results_html}
-            </div>
-            {debug_info}
+            
             <script>
                 // Store all segments data for each source
                 const sourceSegments = {{
