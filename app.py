@@ -1,8 +1,11 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, send_file
 import json
 import time
 import os
+import csv
 from pathlib import Path
+import io
+from pydub import AudioSegment
 
 app = Flask(__name__)
 
@@ -150,34 +153,50 @@ def search():
         
         # Generate HTML for each source
         results_html = ''
-        for source, results in results_by_source.items():
-            audio_filename = source + '.ogg'
-            audio_url = f"/audio/{audio_filename}"
-            
+        if all_results:
+            # Add export all results button at the top
             results_html += f'''
-                <div class="source-group">
-                    <div class="source-header" onclick="toggleSource('{source}')">
-                        <span class="toggle-icon" id="icon-{source}">▶</span>
-                        <span class="source-title">{source}</span>
-                        <span class="result-count">({len(results)} results)</span>
-                    </div>
-                    <div id="{source}-results" class="source-results" style="display: none;">
-                        {''.join(f"""
-                            <div class="result-item" data-start="{r['start']}" data-source="{source}">
-                                <div class="navigation-controls">
-                                    <button onclick="prevSegment(this)" class="nav-button">← Previous Segment</button>
-                                    <button onclick="nextSegment(this)" class="nav-button">Next Segment →</button>
-                                </div>
-                                <p class="result-text">{r['text']}</p>
-                                <audio controls preload="metadata" data-current-time="{r['start']}">
-                                    <source src="{audio_url}#t={r['start']}" type="audio/ogg">
-                                    Your browser does not support the audio element.
-                                </audio>
-                            </div>
-                        """ for r in results)}
-                    </div>
+                <div class="export-controls">
+                    <a href="/export/results/{query}" class="export-button">
+                        Export All Results to CSV
+                    </a>
                 </div>
             '''
+            
+            for source, results in results_by_source.items():
+                audio_filename = source + '.ogg'
+                audio_url = f"/audio/{audio_filename}"
+                
+                results_html += f'''
+                    <div class="source-group">
+                        <div class="source-header" onclick="toggleSource('{source}')">
+                            <span class="toggle-icon" id="icon-{source}">▶</span>
+                            <span class="source-title">{source}</span>
+                            <span class="result-count">({len(results)} results)</span>
+                        </div>
+                        <div class="source-exports">
+                            <a href="/export/source/{source}?type=json" class="export-button">Export JSON</a>
+                            <a href="/export/source/{source}?type=audio" class="export-button">Export Audio</a>
+                        </div>
+                        <div id="{source}-results" class="source-results" style="display: none;">
+                            {''.join(f"""
+                                <div class="result-item" data-start="{r['start']}" data-source="{source}">
+                                    <div class="navigation-controls">
+                                        <button onclick="prevSegment(this)" class="nav-button">← Previous Segment</button>
+                                        <button onclick="nextSegment(this)" class="nav-button">Next Segment →</button>
+                                        <a href="/export/segment/{source}?start={r['start']}&duration=10" 
+                                           class="export-button">Export Segment</a>
+                                    </div>
+                                    <p class="result-text">{r['text']}</p>
+                                    <audio controls preload="metadata" data-current-time="{r['start']}">
+                                        <source src="{audio_url}#t={r['start']}" type="audio/ogg">
+                                        Your browser does not support the audio element.
+                                    </audio>
+                                </div>
+                            """ for r in results)}
+                        </div>
+                    </div>
+                '''
     else:
         results_html = 'No results found'
         print("No results to display")
@@ -299,6 +318,35 @@ def search():
                     font-weight: bold;
                     color: #666;
                 }}
+                
+                .export-controls {{
+                    margin: 20px 0;
+                    padding: 10px;
+                    background-color: #f8f8f8;
+                    border-radius: 4px;
+                    text-align: right;
+                }}
+                
+                .source-exports {{
+                    padding: 10px;
+                    background-color: #f0f0f0;
+                    display: flex;
+                    gap: 10px;
+                }}
+                
+                .export-button {{
+                    display: inline-block;
+                    padding: 8px 16px;
+                    background-color: #4CAF50;
+                    color: white;
+                    text-decoration: none;
+                    border-radius: 4px;
+                    font-size: 14px;
+                }}
+                
+                .export-button:hover {{
+                    background-color: #45a049;
+                }}
             </style>
         </head>
         <body>
@@ -393,7 +441,130 @@ def serve_audio(filename):
         print(f"Error serving audio file {filename}: {str(e)}")
         return f"Error: {str(e)}", 404
 
+@app.route('/export/results/<query>')
+def export_results_csv(query):
+    available_files = get_available_files()
+    all_results = []
+    
+    for file_name in available_files:
+        data = load_audio_segments(available_files[file_name]['json_path'])
+        if data and 'segments' in data:
+            results = search_segments(query, data['segments'], file_name)
+            all_results.extend(results)
+    
+    # Create CSV in memory with UTF-8 BOM for Excel compatibility
+    output = io.StringIO()
+    output.write('\ufeff')  # UTF-8 BOM
+    writer = csv.writer(output, dialect='excel')
+    writer.writerow(['Source', 'Text', 'Start Time', 'End Time'])
+    
+    for r in all_results:
+        # Ensure text is properly encoded
+        text = r['text'].encode('utf-8', errors='replace').decode('utf-8')
+        writer.writerow([r['source'], text, r['start'], r.get('end', '')])
+    
+    # Create the response
+    output.seek(0)
+    return send_file(
+        io.BytesIO(output.getvalue().encode('utf-8')),
+        mimetype='text/csv; charset=utf-8',
+        as_attachment=True,
+        download_name=f'search_results_{query}.csv'
+    )
+
+@app.route('/export/source/<source>')
+def export_source_files(source):
+    available_files = get_available_files()
+    if source not in available_files:
+        return "Source not found", 404
+        
+    file_info = available_files[source]
+    
+    # Determine which file to send based on query parameter
+    file_type = request.args.get('type', 'json')
+    
+    if file_type == 'json':
+        return send_file(
+            file_info['json_path'],
+            mimetype='application/json',
+            as_attachment=True,
+            download_name=f'{source}.json'
+        )
+    elif file_type == 'audio':
+        return send_file(
+            file_info['audio_path'],
+            mimetype='audio/ogg',
+            as_attachment=True,
+            download_name=f'{source}.ogg'
+        )
+
+@app.route('/export/segment/<source>')
+def export_segment(source):
+    start_time = float(request.args.get('start', 0))
+    duration = float(request.args.get('duration', 10))  # Default 10 seconds if not specified
+    
+    available_files = get_available_files()
+    if source not in available_files:
+        return "Source not found", 404
+    
+    try:
+        # Get the audio file path
+        audio_path = available_files[source]['audio_path']
+        print(f"Loading audio file: {audio_path}")
+        
+        if not os.path.exists(audio_path):
+            return f"Audio file not found at {audio_path}", 404
+            
+        # Check if ffmpeg is available
+        if not AudioSegment.ffmpeg:
+            return "Error: ffmpeg not found. Please install ffmpeg.", 500
+            
+        # Load audio file with explicit format
+        audio = AudioSegment.from_file(audio_path, format="ogg")
+        print(f"Successfully loaded audio file of length {len(audio)}ms")
+        
+        # Extract segment (convert to milliseconds)
+        start_ms = int(start_time * 1000)
+        duration_ms = int(duration * 1000)
+        
+        if start_ms >= len(audio):
+            return f"Start time {start_time}s exceeds audio length {len(audio)/1000}s", 400
+            
+        # Adjust duration if it would exceed file length
+        if start_ms + duration_ms > len(audio):
+            duration_ms = len(audio) - start_ms
+            
+        print(f"Extracting segment from {start_ms}ms to {start_ms + duration_ms}ms")
+        segment = audio[start_ms:start_ms + duration_ms]
+        
+        # Export to bytes
+        print("Exporting segment to buffer...")
+        buffer = io.BytesIO()
+        segment.export(buffer, format="ogg")
+        buffer.seek(0)
+        
+        return send_file(
+            buffer,
+            mimetype='audio/ogg',
+            as_attachment=True,
+            download_name=f'{source}_segment_{start_time:.2f}.ogg'
+        )
+    except Exception as e:
+        print(f"Error in export_segment: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return f"Error exporting segment: {str(e)}", 500
+
 if __name__ == '__main__':
+    # Add ffmpeg check at startup
+    try:
+        AudioSegment.from_file(os.devnull)
+        print("ffmpeg is properly configured")
+    except Exception as e:
+        print("WARNING: ffmpeg is not properly configured. Audio segment export will not work.")
+        print(f"Error: {str(e)}")
+        print("Please install ffmpeg and make sure it's in your system PATH")
+    
     print("\nFlask server is starting...")
     print(f"Base directory: {BASE_DIR}")
     print(f"JSON directory: {JSON_DIR}")
