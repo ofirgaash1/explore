@@ -6,6 +6,7 @@ import csv
 from pathlib import Path
 import io
 from pydub import AudioSegment
+from urllib.parse import unquote, quote
 
 app = Flask(__name__)
 
@@ -24,20 +25,63 @@ def get_available_files():
         return json_files
         
     print(f"Scanning for JSON files in: {JSON_DIR}")
-    for json_path in Path(JSON_DIR).glob("*.json"):
-        base_name = json_path.stem
-        audio_path = Path(AUDIO_DIR) / f"{base_name}.ogg"
-        print(f"Found JSON: {json_path}")
-        print(f"Looking for audio: {audio_path}")
+    
+    # Helper function to find audio file
+    def find_audio_file(base_name):
+        # Try both .ogg and .mp3 formats
+        for ext in ['.ogg', '.mp3']:
+            audio_path = Path(AUDIO_DIR) / f"{base_name}{ext}"
+            if audio_path.exists():
+                print(f"Checking audio path: {audio_path}")
+                return audio_path
+        return None
+    
+    # Helper function to find JSON data
+    def find_json_file(json_path):
+        # Case 1: Direct JSON file
+        if json_path.is_file():
+            return json_path
         
-        if audio_path.exists():
+        # Case 2: Directory with full_transcript.json
+        if json_path.is_dir():
+            transcript_path = json_path / "full_transcript.json"
+            if transcript_path.exists():
+                return transcript_path
+                
+        return None
+    
+    # Scan for both direct JSON files and directories
+    for item_path in Path(JSON_DIR).iterdir():
+        # For directories, use the directory name as base_name
+        if item_path.is_dir():
+            base_name = item_path.name
+        else:
+            # For files, remove only the .json extension if present
+            base_name = item_path.name
+            if base_name.endswith('.json'):
+                base_name = base_name[:-5]  # Remove .json extension
+        
+        print(f"Processing base name: {base_name}")
+        
+        # Find JSON file
+        json_path = find_json_file(item_path)
+        if not json_path:
+            print(f"✗ No valid JSON found for {base_name}")
+            continue
+            
+        print(f"Found JSON: {json_path}")
+        
+        # Find corresponding audio file
+        audio_path = find_audio_file(base_name)
+        if audio_path:
             print(f"✓ Matching audio file found: {audio_path}")
             json_files[base_name] = {
                 'json_path': str(json_path),
-                'audio_path': str(audio_path)
+                'audio_path': str(audio_path),
+                'audio_format': audio_path.suffix[1:]  # Remove the dot from extension
             }
         else:
-            print(f"✗ No matching audio file for {json_path}")
+            print(f"✗ No matching audio file for {base_name}")
             
     print(f"Total available files: {len(json_files)}")
     return json_files
@@ -230,8 +274,9 @@ def search():
             '''
             
             for source, results in results_by_source.items():
-                audio_filename = source + '.ogg'
-                audio_url = f"/audio/{audio_filename}"
+                file_info = available_files[source]
+                audio_format = file_info['audio_format']
+                encoded_source = quote(source)
                 
                 results_html += f'''
                     <div class="source-group">
@@ -254,10 +299,11 @@ def search():
                                            class="export-button">Export Segment</a>
                                     </div>
                                     <p class="result-text">{r['text']}</p>
-                                    <audio controls preload="metadata" data-current-time="{r['start']}">
-                                        <source src="{audio_url}#t={r['start']}" type="audio/ogg">
-                                        Your browser does not support the audio element.
-                                    </audio>
+                                    <div class="audio-placeholder" 
+                                         data-source="{encoded_source}"
+                                         data-format="{audio_format}"
+                                         data-start="{r['start']}">
+                                    </div>
                                 </div>
                             """ for r in results)}
                         </div>
@@ -469,15 +515,36 @@ def search():
                     """ for source in results_by_source.keys())}
                 }};
                 
+                function loadAudio(placeholder) {{
+                    const source = placeholder.dataset.source;
+                    const format = placeholder.dataset.format;
+                    const start = placeholder.dataset.start;
+                    const audioUrl = `/audio/${{source}}.${{format}}`;
+                    
+                    const audio = document.createElement('audio');
+                    audio.controls = true;
+                    audio.preload = "metadata";
+                    audio.dataset.currentTime = start;
+                    
+                    const sourceElement = document.createElement('source');
+                    sourceElement.src = `${{audioUrl}}#t=${{start}}`;
+                    sourceElement.type = `audio/${{format}}`;
+                    
+                    audio.appendChild(sourceElement);
+                    placeholder.replaceWith(audio);
+                    return audio;
+                }}
+                
                 function findSegmentIndex(time, segments) {{
-                    return segments.findIndex(seg => seg.start === parseFloat(time));
+                    return segments.findIndex(seg => Math.abs(seg.start - parseFloat(time)) < 0.1);
                 }}
                 
                 function prevSegment(button) {{
                     const resultItem = button.closest('.result-item');
+                    const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
                     const audio = resultItem.querySelector('audio');
-                    const source = resultItem.dataset.source;
-                    const currentTime = parseFloat(audio.dataset.currentTime);
+                    const source = decodeURIComponent(audioPlaceholder ? audioPlaceholder.dataset.source : resultItem.dataset.source);
+                    const currentTime = parseFloat(audioPlaceholder ? audioPlaceholder.dataset.start : audio.dataset.currentTime);
                     
                     const segments = sourceSegments[source];
                     const currentIndex = findSegmentIndex(currentTime, segments);
@@ -490,9 +557,10 @@ def search():
                 
                 function nextSegment(button) {{
                     const resultItem = button.closest('.result-item');
+                    const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
                     const audio = resultItem.querySelector('audio');
-                    const source = resultItem.dataset.source;
-                    const currentTime = parseFloat(audio.dataset.currentTime);
+                    const source = decodeURIComponent(audioPlaceholder ? audioPlaceholder.dataset.source : resultItem.dataset.source);
+                    const currentTime = parseFloat(audioPlaceholder ? audioPlaceholder.dataset.start : audio.dataset.currentTime);
                     
                     const segments = sourceSegments[source];
                     const currentIndex = findSegmentIndex(currentTime, segments);
@@ -504,17 +572,27 @@ def search():
                 }}
                 
                 function updateSegment(resultItem, segment, source) {{
-                    const audio = resultItem.querySelector('audio');
                     const text = resultItem.querySelector('.result-text');
-                    
-                    // Update the text
                     text.textContent = segment.text;
                     
-                    // Update the audio
-                    audio.dataset.currentTime = segment.start;
-                    audio.src = `/audio/${{source}}.ogg#t=${{segment.start}}`;
-                    audio.currentTime = segment.start;
-                    audio.play();
+                    const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
+                    if (audioPlaceholder) {{
+                        // Update placeholder data
+                        audioPlaceholder.dataset.start = segment.start;
+                        // Load audio if not already loaded
+                        const audio = loadAudio(audioPlaceholder);
+                        audio.currentTime = segment.start;
+                        audio.play();
+                    }} else {{
+                        // Update existing audio
+                        const audio = resultItem.querySelector('audio');
+                        const sourceElement = audio.querySelector('source');
+                        const format = sourceElement.type.split('/')[1];
+                        sourceElement.src = `/audio/${{encodeURIComponent(source)}}.${{format}}#t=${{segment.start}}`;
+                        audio.load();
+                        audio.currentTime = segment.start;
+                        audio.play();
+                    }}
                 }}
                 
                 function toggleSource(sourceId) {{
@@ -524,6 +602,11 @@ def search():
                     if (resultsDiv.style.display === 'none') {{
                         resultsDiv.style.display = 'block';
                         icon.textContent = '▼';
+                        
+                        // Load audio players when section is expanded
+                        resultsDiv.querySelectorAll('.audio-placeholder').forEach(placeholder => {{
+                            loadAudio(placeholder);
+                        }});
                     }} else {{
                         resultsDiv.style.display = 'none';
                         icon.textContent = '▶';
@@ -537,9 +620,34 @@ def search():
 @app.route('/audio/<path:filename>')
 def serve_audio(filename):
     try:
-        return send_from_directory(AUDIO_DIR, filename)
+        # Remove any file extension from the filename
+        base_name = filename.rsplit('.', 1)[0]
+        print(f"Requested audio for base name: {base_name}")
+        
+        available_files = get_available_files()
+        
+        # Try to find an exact match first
+        if base_name in available_files:
+            file_info = available_files[base_name]
+            print(f"Found exact match: {file_info['audio_path']}")
+            return send_file(file_info['audio_path'])
+            
+        # If no exact match, try URL-decoded version
+        decoded_name = unquote(base_name)
+        print(f"Trying decoded name: {decoded_name}")
+        
+        if decoded_name in available_files:
+            file_info = available_files[decoded_name]
+            print(f"Found match after decoding: {file_info['audio_path']}")
+            return send_file(file_info['audio_path'])
+            
+        print(f"Available files: {list(available_files.keys())}")
+        return f"Audio file not found for {filename}", 404
+        
     except Exception as e:
         print(f"Error serving audio file {filename}: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return f"Error: {str(e)}", 404
 
 @app.route('/export/results/<query>')
@@ -602,26 +710,27 @@ def export_source_files(source):
 @app.route('/export/segment/<source>')
 def export_segment(source):
     start_time = float(request.args.get('start', 0))
-    duration = float(request.args.get('duration', 10))  # Default 10 seconds if not specified
+    duration = float(request.args.get('duration', 10))
     
     available_files = get_available_files()
     if source not in available_files:
         return "Source not found", 404
     
     try:
-        # Get the audio file path
-        audio_path = available_files[source]['audio_path']
+        file_info = available_files[source]
+        audio_path = file_info['audio_path']
+        audio_format = file_info['audio_format']
+        
         print(f"Loading audio file: {audio_path}")
         
         if not os.path.exists(audio_path):
             return f"Audio file not found at {audio_path}", 404
             
-        # Check if ffmpeg is available
         if not AudioSegment.ffmpeg:
             return "Error: ffmpeg not found. Please install ffmpeg.", 500
             
-        # Load audio file with explicit format
-        audio = AudioSegment.from_file(audio_path, format="ogg")
+        # Load audio file with correct format
+        audio = AudioSegment.from_file(audio_path, format=audio_format)
         print(f"Successfully loaded audio file of length {len(audio)}ms")
         
         # Extract segment (convert to milliseconds)
@@ -638,17 +747,16 @@ def export_segment(source):
         print(f"Extracting segment from {start_ms}ms to {start_ms + duration_ms}ms")
         segment = audio[start_ms:start_ms + duration_ms]
         
-        # Export to bytes
-        print("Exporting segment to buffer...")
+        # Export to bytes in original format
         buffer = io.BytesIO()
-        segment.export(buffer, format="ogg")
+        segment.export(buffer, format=audio_format)
         buffer.seek(0)
         
         return send_file(
             buffer,
-            mimetype='audio/ogg',
+            mimetype=f'audio/{audio_format}',
             as_attachment=True,
-            download_name=f'{source}_segment_{start_time:.2f}.ogg'
+            download_name=f'{source}_segment_{start_time:.2f}.{audio_format}'
         )
     except Exception as e:
         print(f"Error in export_segment: {str(e)}")
