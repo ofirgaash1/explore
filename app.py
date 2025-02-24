@@ -7,114 +7,142 @@ from pathlib import Path
 import io
 from pydub import AudioSegment
 from urllib.parse import unquote, quote
+from functools import lru_cache
+from datetime import datetime, timedelta
 
 app = Flask(__name__)
 
-# Define directories - use absolute paths
+# Define directories
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 JSON_DIR = os.path.join(BASE_DIR, "data", "json")
 AUDIO_DIR = os.path.join(BASE_DIR, "data", "audio")
 
-print("Starting Flask application...")
+# Cache configuration
+CACHE_DURATION = timedelta(minutes=5)  # How long to keep cache valid
+last_scan_time = None
+files_cache = {}
+segments_cache = {}
 
-def get_available_files():
-    """Get list of JSON files and their corresponding audio files"""
+def should_refresh_cache():
+    """Check if cache needs refreshing"""
+    global last_scan_time
+    if last_scan_time is None:
+        return True
+    return datetime.now() - last_scan_time > CACHE_DURATION
+
+@lru_cache(maxsize=128)
+def load_json_file(json_path):
+    """Load and cache JSON file contents"""
+    try:
+        with open(json_path, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        print(f"Error loading JSON file {json_path}: {e}")
+        return None
+
+def get_available_files(force_refresh=False):
+    """Get list of JSON files and their corresponding audio files with caching"""
+    global last_scan_time, files_cache
+    
+    if not force_refresh and not should_refresh_cache() and files_cache:
+        print("Using cached file list")
+        return files_cache
+    
+    print("Scanning files (cache refresh)")
     json_files = {}
-    if not os.path.exists(JSON_DIR):
-        print(f"Warning: {JSON_DIR} directory does not exist")
-        return json_files
-        
-    print(f"Scanning for JSON files in: {JSON_DIR}")
     
     # Helper function to find audio file
     def find_audio_file(base_name):
-        # Try both .ogg and .mp3 formats
         for ext in ['.ogg', '.mp3']:
             audio_path = Path(AUDIO_DIR) / f"{base_name}{ext}"
             if audio_path.exists():
-                print(f"Checking audio path: {audio_path}")
                 return audio_path
         return None
     
     # Helper function to find JSON data
     def find_json_file(json_path):
-        # Case 1: Direct JSON file
         if json_path.is_file():
             return json_path
-        
-        # Case 2: Directory with full_transcript.json
         if json_path.is_dir():
             transcript_path = json_path / "full_transcript.json"
             if transcript_path.exists():
                 return transcript_path
-                
         return None
     
-    # Scan for both direct JSON files and directories
-    for item_path in Path(JSON_DIR).iterdir():
-        # For directories, use the directory name as base_name
-        if item_path.is_dir():
-            base_name = item_path.name
-        else:
-            # For files, remove only the .json extension if present
-            base_name = item_path.name
-            if base_name.endswith('.json'):
-                base_name = base_name[:-5]  # Remove .json extension
-        
-        print(f"Processing base name: {base_name}")
-        
-        # Find JSON file
-        json_path = find_json_file(item_path)
-        if not json_path:
-            print(f"✗ No valid JSON found for {base_name}")
-            continue
-            
-        print(f"Found JSON: {json_path}")
-        
-        # Find corresponding audio file
-        audio_path = find_audio_file(base_name)
-        if audio_path:
-            print(f"✓ Matching audio file found: {audio_path}")
-            json_files[base_name] = {
-                'json_path': str(json_path),
-                'audio_path': str(audio_path),
-                'audio_format': audio_path.suffix[1:]  # Remove the dot from extension
-            }
-        else:
-            print(f"✗ No matching audio file for {base_name}")
-            
-    print(f"Total available files: {len(json_files)}")
-    return json_files
-
-def load_audio_segments(json_path):
     try:
-        print(f"Loading segments from {json_path}")
+        for item_path in Path(JSON_DIR).iterdir():
+            base_name = item_path.name
+            if item_path.is_file() and base_name.endswith('.json'):
+                base_name = base_name[:-5]
+            
+            json_path = find_json_file(item_path)
+            if not json_path:
+                continue
+                
+            audio_path = find_audio_file(base_name)
+            if audio_path:
+                json_files[base_name] = {
+                    'json_path': str(json_path),
+                    'audio_path': str(audio_path),
+                    'audio_format': audio_path.suffix[1:],
+                    'last_modified': os.path.getmtime(json_path)
+                }
         
-        if not os.path.exists(json_path):
-            print(f"Error: {json_path} does not exist!")
-            return {}
-            
-        with open(json_path, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return data
-            
+        # Update cache
+        files_cache = json_files
+        last_scan_time = datetime.now()
+        
     except Exception as e:
-        print(f"Error loading segments: {str(e)}")
-        return {}
+        print(f"Error scanning files: {e}")
+        if not files_cache:  # Only return empty if no cache exists
+            return {}
+    
+    return files_cache
 
-def search_segments(query, segments, source_file):
+def get_segments(json_path, source):
+    """Get segments with caching"""
+    global segments_cache
+    
+    # Check if we have cached segments and they're still valid
+    if source in segments_cache:
+        cache_entry = segments_cache[source]
+        file_mtime = os.path.getmtime(json_path)
+        if file_mtime == cache_entry['mtime']:
+            print(f"Using cached segments for {source}")
+            return cache_entry['segments']
+    
+    # Load segments from file
+    try:
+        data = load_json_file(json_path)
+        if data and 'segments' in data:
+            segments_cache[source] = {
+                'segments': data['segments'],
+                'mtime': os.path.getmtime(json_path)
+            }
+            return data['segments']
+    except Exception as e:
+        print(f"Error loading segments for {source}: {e}")
+    
+    return []
+
+def search_segments(query, source_file, available_files):
+    """Search segments with cached data"""
     results = []
-    for segment_data in segments:
+    file_info = available_files[source_file]
+    
+    segments = get_segments(file_info['json_path'], source_file)
+    for segment in segments:
         try:
-            if query.lower() in str(segment_data['text']).lower():
+            if query.lower() in str(segment['text']).lower():
                 results.append({
-                    'start': segment_data['start'],
-                    'text': segment_data['text'],
+                    'start': segment['start'],
+                    'text': segment['text'],
                     'source': source_file
                 })
         except Exception as e:
-            print(f"Error processing segment: {e}")
+            print(f"Error processing segment in {source_file}: {e}")
             continue
+    
     return results
 
 @app.route('/')
@@ -216,12 +244,12 @@ def search():
     query = request.args.get('q', '')
     print(f"\nNew search request for: '{query}'")
     
+    start_time = time.time()
+    all_results = []
+    
     available_files = get_available_files()
     selected_files = list(available_files.keys())
     print(f"Files to search: {selected_files}")
-    
-    start_time = time.time()
-    all_results = []
     
     for file_name in selected_files:
         file_info = available_files[file_name]
@@ -229,13 +257,7 @@ def search():
         print(f"JSON path: {file_info['json_path']}")
         print(f"Audio path: {file_info['audio_path']}")
         
-        data = load_audio_segments(file_info['json_path'])
-        
-        if not data or 'segments' not in data:
-            print(f"✗ No valid segments found in {file_name}")
-            continue
-            
-        results = search_segments(query, data['segments'], file_name)
+        results = search_segments(query, file_name, available_files)
         print(f"Found {len(results)} matches in {file_name}")
         all_results.extend(results)
     
@@ -511,7 +533,7 @@ def search():
                 const sourceSegments = {{
                     {','.join(f"""
                         '{source}': {json.dumps([{'start': seg['start'], 'text': seg['text']} 
-                                               for seg in load_audio_segments(available_files[source]['json_path'])['segments']])}
+                                               for seg in get_segments(available_files[source]['json_path'], source)])}
                     """ for source in results_by_source.keys())}
                 }};
                 
@@ -656,10 +678,8 @@ def export_results_csv(query):
     all_results = []
     
     for file_name in available_files:
-        data = load_audio_segments(available_files[file_name]['json_path'])
-        if data and 'segments' in data:
-            results = search_segments(query, data['segments'], file_name)
-            all_results.extend(results)
+        results = search_segments(query, file_name, available_files)
+        all_results.extend(results)
     
     # Create CSV in memory with UTF-8 BOM for Excel compatibility
     output = io.StringIO()
@@ -764,7 +784,21 @@ def export_segment(source):
         traceback.print_exc()
         return f"Error exporting segment: {str(e)}", 500
 
+@app.route('/clear-cache')
+def clear_cache():
+    """Admin route to clear all caches"""
+    global last_scan_time, files_cache, segments_cache
+    files_cache = {}
+    segments_cache = {}
+    last_scan_time = None
+    load_json_file.cache_clear()
+    return "Cache cleared", 200
+
 if __name__ == '__main__':
+    # Initial cache population
+    print("Performing initial file scan...")
+    get_available_files(force_refresh=True)
+    
     # Add ffmpeg check at startup
     try:
         AudioSegment.from_file(os.devnull)
