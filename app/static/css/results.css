@@ -1,0 +1,87 @@
+/* Additional styles specific to results page */
+.header {
+    margin-bottom: 1.5rem;
+}
+
+.back-link {
+    color: #4299e1;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    margin-bottom: 0.5rem;
+}
+
+.search-form {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 1.5rem;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.search-form input[type="text"] {
+    flex: 1;
+    padding: 0.75rem;
+    font-size: 1rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.search-form input[type="text"]:focus {
+    border-color: #4299e1;
+}
+
+.search-form button {
+    background-color: #4299e1;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    white-space: nowrap;
+}
+
+.search-form button:hover {
+    background-color: #3182ce;
+}
+
+.source-group {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+}
+
+.stats {
+    margin-bottom: 1.5rem;
+    color: #4a5568;
+    font-size: 0.95rem;
+}
+
+.duration {
+    color: #718096;
+    font-style: italic;
+    margin-left: 0.5rem;
+}
+
+.audio-duration {
+    color: #4a5568;
+    font-weight: 500;
+    margin-left: 0.5rem;
+}
+
+.source-duration {
+    color: #718096;
+    font-size: 0.85rem;
+    margin-left: 0.5rem;
+}
+
+/* ... continue with the rest of the specific results styles ... */ 

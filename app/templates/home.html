@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block title %}Search{% endblock %}
+
+{% block content %}
+<h1>ivrit.ai Explore</h1>
+<form action="{{ url_for('main.search') }}" method="GET" class="search-form">
+    <input type="text" name="q" placeholder="Enter search term..." autofocus>
+    <button type="submit">Search</button>
+</form>
+{% endblock %} 

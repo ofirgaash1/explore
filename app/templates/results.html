@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Search Results{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='css/results.css') }}">
+{% endblock %}
+
+{% block content %}
+<div class="header">
+    <a href="{{ url_for('main.home') }}" class="back-link">← Back to Home</a>
+    <h1>Search Results for: {{ query }}</h1>
+</div>
+
+<!-- Add search bar to results page -->
+<form action="{{ url_for('main.search') }}" method="GET" class="search-form">
+    <input type="text" name="q" placeholder="Enter search term..." value="{{ query }}">
+    <button type="submit">Search</button>
+</form>
+
+<div class="stats">
+    Found {{ results|length }} results in {{ available_files|length }} files
+    {% if search_duration %}
+    <span class="duration">(search took {{ search_duration|round(2) }}ms)</span>
+    {% endif %}
+</div>
+
+{% if results %}
+<div class="export-controls">
+    <a href="{{ url_for('export.export_results_csv', query=query) }}" class="export-button">
+        Export All Results to CSV
+    </a>
+</div>
+
+<div class="results">
+    {% for source, source_results in results|groupby('source') %}
+    <div class="source-group">
+        <div class="source-header" onclick="toggleSource('{{ source }}')">
+            <span class="toggle-icon" id="icon-{{ source }}">▶</span>
+            <span class="source-title">{{ source }}</span>
+            <span class="result-count">({{ source_results|length }} results)</span>
+            {% if audio_durations and source in audio_durations %}
+            <span class="source-duration">{{ audio_durations[source]|round(1) }} min</span>
+            {% endif %}
+        </div>
+        
+        <div class="source-exports">
+            <a href="{{ url_for('export.export_source_files', source=source, type='json') }}" class="export-button">Export JSON</a>
+            <a href="{{ url_for('export.export_source_files', source=source, type='audio') }}" class="export-button">Export Audio</a>
+        </div>
+        
+        <div id="{{ source }}-results" class="source-results" style="display: none;">
+            {% for result in source_results %}
+            <div class="result-item" data-start="{{ result.start }}" data-source="{{ source }}">
+                <div class="navigation-controls">
+                    <button onclick="prevSegment(this)" class="nav-button">← Previous Segment</button>
+                    <button onclick="nextSegment(this)" class="nav-button">Next Segment →</button>
+                    <a href="{{ url_for('export.export_segment', source=source, start=result.start, duration=10) }}" 
+                       class="export-button">Export Segment</a>
+                </div>
+                <p class="result-text">{{ result.text }}</p>
+                <div class="audio-placeholder" 
+                     data-source="{{ source|urlencode }}"
+                     data-format="{{ available_files[source].audio_format }}"
+                     data-start="{{ result.start }}">
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% else %}
+<p class="no-results">No results found</p>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/results.js') }}"></script>
+{% endblock %} 
