@@ -7,8 +7,19 @@ import os
 
 bp = Blueprint('main', __name__)
 
+# Global search service instance for persistence
+search_service = None
+
 @bp.route('/')
 def home():
+    # Initialize search index on first request
+    global search_service
+    if search_service is None:
+        file_service = FileService(current_app)
+        search_service = SearchService(file_service)
+        # Build the index in the background
+        search_service.build_search_index()
+    
     return render_template('home.html')
 
 @bp.route('/search')
@@ -17,10 +28,18 @@ def search():
     
     start_time = time.time()
     
-    file_service = FileService(current_app)
-    search_service = SearchService(file_service)
+    # Use the global search service
+    global search_service
+    if search_service is None:
+        file_service = FileService(current_app)
+        search_service = SearchService(file_service)
+        search_service.build_search_index()
     
+    # Perform the search
     results = search_service.search(query)
+    
+    # Get available files for audio paths
+    file_service = FileService(current_app)
     available_files = file_service.get_available_files()
     
     # Calculate audio durations - commented out due to ffmpeg dependency issues
