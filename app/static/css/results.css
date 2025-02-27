@@ -1,4 +1,4 @@
-/* Additional styles specific to results page */
+/* Modern results page styling */
 .header {
     margin-bottom: 1.5rem;
 }
@@ -9,6 +9,7 @@
     display: inline-flex;
     align-items: center;
     margin-bottom: 0.5rem;
+    font-weight: 500;
 }
 
 .search-form {
@@ -52,14 +53,6 @@
     background-color: #3182ce;
 }
 
-.source-group {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    margin-bottom: 1.5rem;
-    overflow: hidden;
-}
-
 .stats {
     margin-bottom: 1.5rem;
     color: #4a5568;
@@ -72,16 +65,161 @@
     margin-left: 0.5rem;
 }
 
-.audio-duration {
-    color: #4a5568;
-    font-weight: 500;
-    margin-left: 0.5rem;
+/* Modern source group styling */
+.source-group {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 1rem;
+    overflow: hidden;
 }
 
-.source-duration {
+.source-header {
+    display: flex;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    border-bottom: 1px solid transparent;
+}
+
+.source-header:hover {
+    background-color: #f7fafc;
+}
+
+.toggle-icon {
+    color: #4299e1;
+    margin-right: 0.75rem;
+    font-size: 0.9rem;
+    transition: transform 0.2s;
+}
+
+.source-title {
+    font-weight: 600;
+    color: #2d3748;
+    flex: 1;
+}
+
+.result-count {
     color: #718096;
-    font-size: 0.85rem;
-    margin-left: 0.5rem;
+    font-size: 0.9rem;
+    margin: 0 1rem;
 }
 
-/* ... continue with the rest of the specific results styles ... */ 
+.source-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn {
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.btn-export {
+    background-color: #ebf4ff;
+    color: #4299e1;
+}
+
+.btn-export:hover {
+    background-color: #bee3f8;
+}
+
+/* Results content */
+.source-results {
+    padding: 0;
+}
+
+.result-item {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #edf2f7;
+    transition: background-color 0.2s;
+}
+
+.result-item:last-child {
+    border-bottom: none;
+}
+
+.result-item:hover {
+    background-color: #f7fafc;
+}
+
+.result-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.result-audio {
+    min-width: 250px;
+}
+
+.result-text-container {
+    flex: 1;
+}
+
+.result-text {
+    margin: 0.5rem 0;
+    color: #2d3748;
+    line-height: 1.5;
+    direction: rtl;
+    text-align: right;
+    font-size: 1.05rem;
+    font-family: 'Rubik', 'Arial Hebrew', sans-serif;
+}
+
+.result-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    justify-content: flex-end;
+}
+
+.btn-nav {
+    background-color: #edf2f7;
+    color: #4a5568;
+}
+
+.btn-nav:hover {
+    background-color: #e2e8f0;
+}
+
+/* Export controls */
+.export-controls {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+}
+
+.btn-primary {
+    background-color: #4299e1;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #3182ce;
+}
+
+/* No results message */
+.no-results {
+    text-align: center;
+    padding: 2rem;
+    color: #718096;
+    font-size: 1.1rem;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Audio player styling */
+audio {
+    width: 100%;
+    height: 36px;
+    border-radius: 6px;
+} 

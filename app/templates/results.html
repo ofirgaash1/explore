@@ -12,7 +12,7 @@
     <h1>Search Results for: {{ query }}</h1>
 </div>
 
-<!-- Add search bar to results page -->
+<!-- Search bar -->
 <form action="{{ url_for('main.search') }}" method="GET" class="search-form">
     <input type="text" name="q" placeholder="Enter search term..." value="{{ query }}">
     <button type="submit">Search</button>
@@ -27,7 +27,7 @@
 
 {% if results %}
 <div class="export-controls">
-    <a href="{{ url_for('export.export_results_csv', query=query) }}" class="export-button">
+    <a href="{{ url_for('export.export_results_csv', query=query) }}" class="btn btn-primary">
         Export All Results to CSV
     </a>
 </div>
@@ -38,31 +38,33 @@
         <div class="source-header" onclick="toggleSource('{{ source }}')">
             <span class="toggle-icon" id="icon-{{ source }}">▶</span>
             <span class="source-title">{{ source }}</span>
-            <span class="result-count">({{ source_results|length }} results)</span>
-            {% if audio_durations and source in audio_durations %}
-            <span class="source-duration">{{ audio_durations[source]|round(1) }} min</span>
-            {% endif %}
-        </div>
-        
-        <div class="source-exports">
-            <a href="{{ url_for('export.export_source_files', source=source, type='json') }}" class="export-button">Export JSON</a>
-            <a href="{{ url_for('export.export_source_files', source=source, type='audio') }}" class="export-button">Export Audio</a>
+            <span class="result-count">{{ source_results|length }} results</span>
+            <div class="source-actions">
+                <a href="{{ url_for('export.export_source_files', source=source, type='json') }}" class="btn btn-export">JSON</a>
+                <a href="{{ url_for('export.export_source_files', source=source, type='audio') }}" class="btn btn-export">Audio</a>
+            </div>
         </div>
         
         <div id="{{ source }}-results" class="source-results" style="display: none;">
             {% for result in source_results %}
             <div class="result-item" data-start="{{ result.start }}" data-source="{{ source }}">
-                <div class="navigation-controls">
-                    <button onclick="prevSegment(this)" class="nav-button">← Previous Segment</button>
-                    <button onclick="nextSegment(this)" class="nav-button">Next Segment →</button>
-                    <a href="{{ url_for('export.export_segment', source=source, start=result.start, duration=10) }}" 
-                       class="export-button">Export Segment</a>
-                </div>
-                <p class="result-text">{{ result.text }}</p>
-                <div class="audio-placeholder" 
-                     data-source="{{ source|urlencode }}"
-                     data-format="{{ available_files[source].audio_format }}"
-                     data-start="{{ result.start }}">
+                <div class="result-content">
+                    <div class="result-audio">
+                        <div class="audio-placeholder" 
+                             data-source="{{ source|urlencode }}"
+                             data-format="{{ available_files[source].audio_format }}"
+                             data-start="{{ result.start }}">
+                        </div>
+                    </div>
+                    <div class="result-text-container">
+                        <p class="result-text">{{ result.text }}</p>
+                        <div class="result-actions">
+                            <button onclick="prevSegment(this)" class="btn btn-nav">← Prev</button>
+                            <button onclick="nextSegment(this)" class="btn btn-nav">Next →</button>
+                            <a href="{{ url_for('export.export_segment', source=source, start=result.start, duration=10) }}" 
+                               class="btn btn-export">Export Segment</a>
+                        </div>
+                    </div>
                 </div>
             </div>
             {% endfor %}
@@ -77,4 +79,26 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/results.js') }}"></script>
+<script>
+    // Update toggle function to change icon
+    function toggleSource(sourceId) {
+        const resultsDiv = document.getElementById(sourceId + '-results');
+        const icon = document.getElementById('icon-' + sourceId);
+        
+        if (resultsDiv.style.display === 'none') {
+            resultsDiv.style.display = 'block';
+            icon.textContent = '▼';
+            icon.style.transform = 'rotate(0deg)';
+            
+            // Load audio players when section is expanded
+            resultsDiv.querySelectorAll('.audio-placeholder').forEach(placeholder => {
+                loadAudio(placeholder);
+            });
+        } else {
+            resultsDiv.style.display = 'none';
+            icon.textContent = '▶';
+            icon.style.transform = 'rotate(0deg)';
+        }
+    }
+</script>
 {% endblock %} 
