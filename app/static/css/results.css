@@ -1,0 +1,361 @@
+/* Modern results page styling */
+.header {
+    margin-bottom: 1.5rem;
+}
+
+.back-link {
+    color: #4299e1;
+    text-decoration: none;
+    display: inline-flex;
+    align-items: center;
+    margin-bottom: 0.5rem;
+    font-weight: 500;
+}
+
+.search-form {
+    background: white;
+    padding: 1.5rem;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 1.5rem;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.search-form input[type="text"] {
+    flex: 1;
+    padding: 0.75rem;
+    font-size: 1rem;
+    border: 2px solid #e2e8f0;
+    border-radius: 8px;
+    outline: none;
+    transition: border-color 0.2s;
+}
+
+.search-form input[type="text"]:focus {
+    border-color: #4299e1;
+}
+
+.search-form button {
+    background-color: #4299e1;
+    color: white;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    border-radius: 8px;
+    font-size: 1rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    white-space: nowrap;
+}
+
+.search-form button:hover {
+    background-color: #3182ce;
+}
+
+.stats {
+    margin-bottom: 1.5rem;
+    color: #4a5568;
+    font-size: 0.95rem;
+}
+
+.duration {
+    color: #718096;
+    font-style: italic;
+    margin-left: 0.5rem;
+}
+
+/* Modern source group styling */
+.source-group {
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    margin-bottom: 1rem;
+    overflow: hidden;
+}
+
+.source-header {
+    display: flex;
+    align-items: center;
+    padding: 1rem 1.5rem;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    border-bottom: 1px solid transparent;
+}
+
+.source-header:hover {
+    background-color: #f7fafc;
+}
+
+.toggle-icon {
+    color: #4299e1;
+    margin-right: 0.75rem;
+    font-size: 0.9rem;
+    transition: transform 0.2s;
+}
+
+.source-title {
+    font-weight: 600;
+    color: #2d3748;
+    flex: 1;
+}
+
+.result-count {
+    color: #718096;
+    font-size: 0.9rem;
+    margin: 0 1rem;
+}
+
+.source-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.btn {
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.btn-export {
+    background-color: #ebf4ff;
+    color: #4299e1;
+}
+
+.btn-export:hover {
+    background-color: #bee3f8;
+}
+
+/* Results content */
+.source-results {
+    padding: 0;
+}
+
+.result-item {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #edf2f7;
+    transition: background-color 0.2s;
+}
+
+.result-item:last-child {
+    border-bottom: none;
+}
+
+.result-item:hover {
+    background-color: #f7fafc;
+}
+
+.result-content {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.result-audio {
+    min-width: 250px;
+}
+
+.audio-controls {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+}
+
+.audio-btn {
+    background-color: #edf2f7;
+    color: #4a5568;
+    padding: 0.3rem 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.audio-btn:hover {
+    background-color: #e2e8f0;
+}
+
+.result-text-container {
+    flex: 1;
+}
+
+.result-text {
+    margin: 0.5rem 0;
+    color: #2d3748;
+    line-height: 1.5;
+    direction: rtl;
+    text-align: right;
+    font-size: 1.05rem;
+    font-family: 'Rubik', 'Arial Hebrew', sans-serif;
+}
+
+/* Context segments styling */
+.context-container {
+    margin: 0.5rem 0;
+    direction: rtl;
+    text-align: right;
+    font-family: 'Rubik', 'Arial Hebrew', sans-serif;
+}
+
+.context-segment {
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+    font-size: 1.05rem;
+    color: #2d3748;
+    position: relative;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.context-segment:hover {
+    box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+}
+
+.context-segment:hover::after {
+    content: "🔊 Play";
+    position: absolute;
+    bottom: 0.3rem;
+    right: 0.5rem;
+    font-size: 0.75rem;
+    color: #4299e1;
+    background-color: rgba(255, 255, 255, 0.8);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+}
+
+.segment-time {
+    position: absolute;
+    top: 0.3rem;
+    left: 0.5rem;
+    color: #718096;
+    font-size: 0.8rem;
+    direction: ltr;
+    background-color: rgba(247, 250, 252, 0.8);
+    padding: 0.1rem 0.3rem;
+    border-radius: 3px;
+}
+
+.prev-segment {
+    background-color: #f7fafc;
+    border-right: 3px solid #e2e8f0;
+    color: #718096;
+}
+
+.current-segment {
+    background-color: #ebf8ff;
+    border-right: 3px solid #4299e1;
+}
+
+.next-segment {
+    background-color: #f7fafc;
+    border-right: 3px solid #e2e8f0;
+    color: #718096;
+}
+
+.context-segment strong {
+    font-weight: 700;
+    color: #2b6cb0;
+    background-color: #bee3f8;
+    padding: 0 0.25rem;
+    border-radius: 3px;
+}
+
+.result-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-top: 0.5rem;
+    justify-content: flex-end;
+}
+
+.btn-nav {
+    background-color: #edf2f7;
+    color: #4a5568;
+}
+
+.btn-nav:hover {
+    background-color: #e2e8f0;
+}
+
+/* Export controls */
+.export-controls {
+    display: flex;
+    justify-content: flex-end;
+    margin-bottom: 1rem;
+}
+
+.btn-primary {
+    background-color: #4299e1;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #3182ce;
+}
+
+/* No results message */
+.no-results {
+    text-align: center;
+    padding: 2rem;
+    color: #718096;
+    font-size: 1.1rem;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+/* Audio player styling */
+audio {
+    width: 100%;
+    height: 36px;
+    border-radius: 6px;
+}
+
+/* Add these styles to the existing CSS file */
+
+.context-scroller {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.75rem;
+    padding: 0.5rem;
+    background-color: #f8fafc;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+}
+
+.scroller-btn {
+    background-color: #edf2f7;
+    color: #4a5568;
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+}
+
+.scroller-btn:hover {
+    background-color: #e2e8f0;
+    color: #2d3748;
+}
+
+.scroller-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.scroller-position {
+    color: #718096;
+    font-size: 0.85rem;
+    font-weight: 500;
+} 
