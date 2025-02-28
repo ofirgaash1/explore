@@ -24,6 +24,10 @@ function loadAudio(placeholder) {
     const start = placeholder.dataset.start;
     const audioUrl = `/audio/${source}.${format}`;
     
+    const audioContainer = document.createElement('div');
+    audioContainer.className = 'audio-container';
+    
+    // Create audio element
     const audio = document.createElement('audio');
     audio.controls = true;
     audio.preload = "metadata";
@@ -34,8 +38,49 @@ function loadAudio(placeholder) {
     sourceElement.type = `audio/${format}`;
     
     audio.appendChild(sourceElement);
-    placeholder.replaceWith(audio);
+    audioContainer.appendChild(audio);
+    
+    // Add audio navigation buttons
+    const audioControls = document.createElement('div');
+    audioControls.className = 'audio-controls';
+    
+    const backBtn = document.createElement('button');
+    backBtn.className = 'audio-btn';
+    backBtn.textContent = '⏪ -15s';
+    backBtn.onclick = function() { skipAudio(audio, -15); };
+    
+    const forwardBtn = document.createElement('button');
+    forwardBtn.className = 'audio-btn';
+    forwardBtn.textContent = '+15s ⏩';
+    forwardBtn.onclick = function() { skipAudio(audio, 15); };
+    
+    audioControls.appendChild(backBtn);
+    audioControls.appendChild(forwardBtn);
+    audioContainer.appendChild(audioControls);
+    
+    placeholder.replaceWith(audioContainer);
     return audio;
+}
+
+function skipAudio(audio, seconds) {
+    const newTime = Math.max(0, audio.currentTime + seconds);
+    audio.currentTime = newTime;
+    audio.dataset.currentTime = newTime;
+}
+
+function formatTime(seconds) {
+    // Handle hours if needed
+    if (seconds >= 3600) {
+        const hours = Math.floor(seconds / 3600);
+        const minutes = Math.floor((seconds % 3600) / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
+    } else {
+        // Original minutes:seconds format
+        const minutes = Math.floor(seconds / 60);
+        const remainingSeconds = Math.floor(seconds % 60);
+        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    }
 }
 
 function findSegmentIndex(time, segments) {
@@ -67,7 +112,10 @@ function addContextToResult(resultItem) {
     
     // Add previous segment if available
     if (prevSegment) {
-        contextHtml += `<div class="context-segment prev-segment">${prevSegment.text}</div>`;
+        contextHtml += `<div class="context-segment prev-segment" data-start="${prevSegment.start}" data-index="${currentIndex-1}">
+            <span class="segment-time">${formatTime(prevSegment.start)}</span>
+            ${prevSegment.text}
+        </div>`;
     }
     
     // Add current segment with highlighted query
@@ -80,11 +128,17 @@ function addContextToResult(resultItem) {
         currentText = currentText.replace(regex, '<strong>$1</strong>');
     }
     
-    contextHtml += `<div class="context-segment current-segment">${currentText}</div>`;
+    contextHtml += `<div class="context-segment current-segment" data-start="${currentSegment.start}" data-index="${currentIndex}">
+        <span class="segment-time">${formatTime(currentSegment.start)}</span>
+        ${currentText}
+    </div>`;
     
     // Add next segment if available
     if (nextSegment) {
-        contextHtml += `<div class="context-segment next-segment">${nextSegment.text}</div>`;
+        contextHtml += `<div class="context-segment next-segment" data-start="${nextSegment.start}" data-index="${currentIndex+1}">
+            <span class="segment-time">${formatTime(nextSegment.start)}</span>
+            ${nextSegment.text}
+        </div>`;
     }
     
     // Update the result text
@@ -96,93 +150,77 @@ function addContextToResult(resultItem) {
     contextContainer.className = 'context-container';
     contextContainer.innerHTML = contextHtml;
     
-    resultText.replaceWith(contextContainer);
-}
-
-function prevSegment(button) {
-    // Navigate up to the result-item from the button
-    const resultItem = button.closest('.result-item');
+    // Add click event listeners to segments for audio playback
+    contextContainer.querySelectorAll('.context-segment').forEach(segment => {
+        segment.addEventListener('click', function() {
+            playSegmentAudio(resultItem, this.dataset.start, source);
+        });
+    });
     
-    // Get source and current time
-    const source = decodeURIComponent(resultItem.dataset.source);
+    // Add context scroller controls
+    const scrollerControls = document.createElement('div');
+    scrollerControls.className = 'context-scroller';
+    scrollerControls.innerHTML = `
+        <button class="scroller-btn" data-direction="up" title="Scroll up to earlier segments">▲ Earlier</button>
+        <span class="scroller-position">Segment ${currentIndex + 1} of ${segments.length}</span>
+        <button class="scroller-btn" data-direction="down" title="Scroll down to later segments">Later ▼</button>
+    `;
     
-    // Find either the audio-placeholder or the audio element
-    const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
-    const audio = resultItem.querySelector('audio');
+    // Add event listeners to scroller buttons
+    scrollerControls.querySelectorAll('.scroller-btn').forEach(btn => {
+        btn.addEventListener('click', function() {
+            scrollContext(resultItem, this.dataset.direction);
+        });
+    });
     
-    // Get the current time from either the placeholder or the audio element
-    const currentTime = parseFloat(audioPlaceholder ? 
-                                  audioPlaceholder.dataset.start : 
-                                  audio.dataset.currentTime);
+    // Store the current index in the result item for reference
+    resultItem.dataset.currentIndex = currentIndex;
     
-    // Get segments for this source
-    const segments = sourceSegments[source];
-    if (!segments) {
-        // If segments aren't loaded yet, try to load them from the server
-        const jsonPath = `/export/source/${encodeURIComponent(source)}?type=json`;
-        initializeSourceSegments(source, jsonPath);
-        return;
-    }
-    
-    // Find current segment index
-    const currentIndex = findSegmentIndex(currentTime, segments);
-    
-    // If we found the current segment and it's not the first one
-    if (currentIndex > 0) {
-        const prevSegment = segments[currentIndex - 1];
-        updateSegment(resultItem, prevSegment, source);
-    }
-}
-
-function nextSegment(button) {
-    // Navigate up to the result-item from the button
-    const resultItem = button.closest('.result-item');
-    
-    // Get source and current time
-    const source = decodeURIComponent(resultItem.dataset.source);
-    
-    // Find either the audio-placeholder or the audio element
-    const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
-    const audio = resultItem.querySelector('audio');
-    
-    // Get the current time from either the placeholder or the audio element
-    const currentTime = parseFloat(audioPlaceholder ? 
-                                  audioPlaceholder.dataset.start : 
-                                  audio.dataset.currentTime);
-    
-    // Get segments for this source
-    const segments = sourceSegments[source];
-    if (!segments) {
-        // If segments aren't loaded yet, try to load them from the server
-        const jsonPath = `/export/source/${encodeURIComponent(source)}?type=json`;
-        initializeSourceSegments(source, jsonPath);
-        return;
-    }
-    
-    // Find current segment index
-    const currentIndex = findSegmentIndex(currentTime, segments);
-    
-    // If we found the current segment and it's not the last one
-    if (currentIndex < segments.length - 1) {
-        const nextSegment = segments[currentIndex + 1];
-        updateSegment(resultItem, nextSegment, source);
+    // Replace the text with the context container and scroller
+    if (resultText) {
+        resultText.replaceWith(contextContainer);
+        textContainer.insertBefore(scrollerControls, textContainer.firstChild);
+    } else {
+        // If we're updating an existing context view
+        const existingContext = textContainer.querySelector('.context-container');
+        const existingScroller = textContainer.querySelector('.context-scroller');
+        
+        if (existingContext) {
+            existingContext.innerHTML = contextHtml;
+            
+            // Re-add click event listeners to segments
+            existingContext.querySelectorAll('.context-segment').forEach(segment => {
+                segment.addEventListener('click', function() {
+                    playSegmentAudio(resultItem, this.dataset.start, source);
+                });
+            });
+        } else {
+            textContainer.appendChild(contextContainer);
+        }
+        
+        if (existingScroller) {
+            existingScroller.querySelector('.scroller-position').textContent = 
+                `Segment ${currentIndex + 1} of ${segments.length}`;
+        } else {
+            textContainer.insertBefore(scrollerControls, textContainer.firstChild);
+        }
     }
 }
 
-function updateSegment(resultItem, segment, source) {
-    // Update the data attribute for the result item
-    resultItem.dataset.start = segment.start;
-    
-    // Update the context display
-    addContextToResult(resultItem);
+function playSegmentAudio(resultItem, startTime, source) {
+    // Update the export segment link
+    const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
+    if (exportLink) {
+        exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${startTime}&duration=10`;
+    }
     
     // Update the audio element or placeholder
     const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
     if (audioPlaceholder) {
         // If we still have a placeholder, update its data and load the audio
-        audioPlaceholder.dataset.start = segment.start;
+        audioPlaceholder.dataset.start = startTime;
         const audio = loadAudio(audioPlaceholder);
-        audio.currentTime = segment.start;
+        audio.currentTime = startTime;
         audio.play();
     } else {
         // If we already have an audio element, update its source
@@ -191,22 +229,97 @@ function updateSegment(resultItem, segment, source) {
         const format = sourceElement.type.split('/')[1];
         
         // Update the source URL with the new start time
-        sourceElement.src = `/audio/${encodeURIComponent(source)}.${format}#t=${segment.start}`;
+        sourceElement.src = `/audio/${encodeURIComponent(source)}.${format}#t=${startTime}`;
         
         // Update the data attribute for future reference
-        audio.dataset.currentTime = segment.start;
+        audio.dataset.currentTime = startTime;
         
         // Reload and play the audio
         audio.load();
-        audio.currentTime = segment.start;
+        audio.currentTime = startTime;
         audio.play();
     }
+}
+
+function scrollContext(resultItem, direction) {
+    const source = decodeURIComponent(resultItem.dataset.source);
+    const currentIndex = parseInt(resultItem.dataset.currentIndex);
     
-    // Update the export segment link
-    const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
-    if (exportLink) {
-        exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${segment.start}&duration=10`;
+    // Get segments for this source
+    const segments = sourceSegments[source];
+    if (!segments) return;
+    
+    let newIndex;
+    
+    if (direction === 'up') {
+        // Move up 3 segments if possible, or to the beginning
+        newIndex = Math.max(0, currentIndex - 3);
+    } else {
+        // Move down 3 segments if possible, or to the end
+        newIndex = Math.min(segments.length - 1, currentIndex + 3);
     }
+    
+    // If we're already at the limit, don't do anything
+    if (newIndex === currentIndex) return;
+    
+    // Update to the new segment without changing audio
+    updateSegmentContext(resultItem, segments[newIndex], source);
+}
+
+function prevSegment(button) {
+    // Navigate up to the result-item from the button
+    const resultItem = button.closest('.result-item');
+    
+    // Get source and current index
+    const source = decodeURIComponent(resultItem.dataset.source);
+    const currentIndex = parseInt(resultItem.dataset.currentIndex);
+    
+    // Get segments for this source
+    const segments = sourceSegments[source];
+    if (!segments) {
+        // If segments aren't loaded yet, try to load them from the server
+        const jsonPath = `/export/source/${encodeURIComponent(source)}?type=json`;
+        initializeSourceSegments(source, jsonPath);
+        return;
+    }
+    
+    // If we found the current segment and it's not the first one
+    if (currentIndex > 0) {
+        const prevSegment = segments[currentIndex - 1];
+        updateSegmentContext(resultItem, prevSegment, source);
+    }
+}
+
+function nextSegment(button) {
+    // Navigate up to the result-item from the button
+    const resultItem = button.closest('.result-item');
+    
+    // Get source and current index
+    const source = decodeURIComponent(resultItem.dataset.source);
+    const currentIndex = parseInt(resultItem.dataset.currentIndex);
+    
+    // Get segments for this source
+    const segments = sourceSegments[source];
+    if (!segments) {
+        // If segments aren't loaded yet, try to load them from the server
+        const jsonPath = `/export/source/${encodeURIComponent(source)}?type=json`;
+        initializeSourceSegments(source, jsonPath);
+        return;
+    }
+    
+    // If we found the current segment and it's not the last one
+    if (currentIndex < segments.length - 1) {
+        const nextSegment = segments[currentIndex + 1];
+        updateSegmentContext(resultItem, nextSegment, source);
+    }
+}
+
+function updateSegmentContext(resultItem, segment, source) {
+    // Update the data attribute for the result item
+    resultItem.dataset.start = segment.start;
+    
+    // Update the context display only
+    addContextToResult(resultItem);
 }
 
 function toggleSource(sourceId) {

@@ -59,8 +59,6 @@
                     <div class="result-text-container">
                         <p class="result-text">{{ result.text }}</p>
                         <div class="result-actions">
-                            <button onclick="prevSegment(this)" class="btn btn-nav">← Prev</button>
-                            <button onclick="nextSegment(this)" class="btn btn-nav">Next →</button>
                             <a href="{{ url_for('export.export_segment', source=source, start=result.start, duration=10) }}" 
                                class="btn btn-export">Export Segment</a>
                         </div>
