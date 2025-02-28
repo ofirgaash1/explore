@@ -8,6 +8,11 @@ function initializeSourceSegments(source, jsonPath) {
         .then(data => {
             if (data && data.segments) {
                 sourceSegments[source] = data.segments;
+                
+                // After loading segments, update all result items for this source to show context
+                document.querySelectorAll(`.result-item[data-source="${source}"]`).forEach(item => {
+                    addContextToResult(item);
+                });
             }
         })
         .catch(error => console.error('Error loading segments:', error));
@@ -35,6 +40,63 @@ function loadAudio(placeholder) {
 
 function findSegmentIndex(time, segments) {
     return segments.findIndex(seg => Math.abs(seg.start - parseFloat(time)) < 0.1);
+}
+
+function addContextToResult(resultItem) {
+    const source = decodeURIComponent(resultItem.dataset.source);
+    const start = parseFloat(resultItem.dataset.start);
+    const query = document.querySelector('input[name="q"]').value.toLowerCase();
+    
+    // Get segments for this source
+    const segments = sourceSegments[source];
+    if (!segments) {
+        return; // Segments not loaded yet
+    }
+    
+    // Find current segment index
+    const currentIndex = findSegmentIndex(start, segments);
+    if (currentIndex === -1) return;
+    
+    // Get previous, current, and next segments
+    const prevSegment = currentIndex > 0 ? segments[currentIndex - 1] : null;
+    const currentSegment = segments[currentIndex];
+    const nextSegment = currentIndex < segments.length - 1 ? segments[currentIndex + 1] : null;
+    
+    // Create context HTML
+    let contextHtml = '';
+    
+    // Add previous segment if available
+    if (prevSegment) {
+        contextHtml += `<div class="context-segment prev-segment">${prevSegment.text}</div>`;
+    }
+    
+    // Add current segment with highlighted query
+    let currentText = currentSegment.text;
+    if (query) {
+        // Escape special regex characters in the query
+        const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        // Create a regex that matches the query with word boundaries (if possible)
+        const regex = new RegExp(`(${escapedQuery})`, 'gi');
+        currentText = currentText.replace(regex, '<strong>$1</strong>');
+    }
+    
+    contextHtml += `<div class="context-segment current-segment">${currentText}</div>`;
+    
+    // Add next segment if available
+    if (nextSegment) {
+        contextHtml += `<div class="context-segment next-segment">${nextSegment.text}</div>`;
+    }
+    
+    // Update the result text
+    const textContainer = resultItem.querySelector('.result-text-container');
+    const resultText = resultItem.querySelector('.result-text');
+    
+    // Replace the single result text with the context container
+    const contextContainer = document.createElement('div');
+    contextContainer.className = 'context-container';
+    contextContainer.innerHTML = contextHtml;
+    
+    resultText.replaceWith(contextContainer);
 }
 
 function prevSegment(button) {
@@ -108,9 +170,11 @@ function nextSegment(button) {
 }
 
 function updateSegment(resultItem, segment, source) {
-    // Update the text content
-    const textElement = resultItem.querySelector('.result-text');
-    textElement.textContent = segment.text;
+    // Update the data attribute for the result item
+    resultItem.dataset.start = segment.start;
+    
+    // Update the context display
+    addContextToResult(resultItem);
     
     // Update the audio element or placeholder
     const audioPlaceholder = resultItem.querySelector('.audio-placeholder');

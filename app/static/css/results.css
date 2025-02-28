@@ -174,6 +174,48 @@
     font-family: 'Rubik', 'Arial Hebrew', sans-serif;
 }
 
+/* Context segments styling */
+.context-container {
+    margin: 0.5rem 0;
+    direction: rtl;
+    text-align: right;
+    font-family: 'Rubik', 'Arial Hebrew', sans-serif;
+}
+
+.context-segment {
+    padding: 0.75rem;
+    border-radius: 8px;
+    margin-bottom: 0.5rem;
+    line-height: 1.5;
+    font-size: 1.05rem;
+    color: #2d3748;
+}
+
+.prev-segment {
+    background-color: #f7fafc;
+    border-right: 3px solid #e2e8f0;
+    color: #718096;
+}
+
+.current-segment {
+    background-color: #ebf8ff;
+    border-right: 3px solid #4299e1;
+}
+
+.next-segment {
+    background-color: #f7fafc;
+    border-right: 3px solid #e2e8f0;
+    color: #718096;
+}
+
+.context-segment strong {
+    font-weight: 700;
+    color: #2b6cb0;
+    background-color: #bee3f8;
+    padding: 0 0.25rem;
+    border-radius: 3px;
+}
+
 .result-actions {
     display: flex;
     gap: 0.5rem;

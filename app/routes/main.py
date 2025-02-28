@@ -4,22 +4,18 @@ from ..services.file_service import FileService
 # from pydub import AudioSegment  # Commented out
 import time
 import os
+import logging
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('main', __name__)
 
 # Global search service instance for persistence
 search_service = None
+file_service = None
 
 @bp.route('/')
 def home():
-    # Initialize search index on first request
-    global search_service
-    if search_service is None:
-        file_service = FileService(current_app)
-        search_service = SearchService(file_service)
-        # Build the index in the background
-        search_service.build_search_index()
-    
     return render_template('home.html')
 
 @bp.route('/search')
@@ -28,18 +24,22 @@ def search():
     
     start_time = time.time()
     
-    # Use the global search service
-    global search_service
+    # Use the global search service that was initialized in run.py
+    global search_service, file_service
+    
+    # These should already be initialized in run.py, but just in case:
     if search_service is None:
-        file_service = FileService(current_app)
+        logger.info("Search service not initialized yet, initializing now...")
+        if file_service is None:
+            file_service = FileService(current_app)
         search_service = SearchService(file_service)
         search_service.build_search_index()
     
     # Perform the search
+    logger.info(f"Searching for: '{query}'")
     results = search_service.search(query)
     
     # Get available files for audio paths
-    file_service = FileService(current_app)
     available_files = file_service.get_available_files()
     
     # Calculate audio durations - commented out due to ffmpeg dependency issues
@@ -62,6 +62,7 @@ def search():
     '''
     
     search_duration = (time.time() - start_time) * 1000  # Convert to milliseconds
+    logger.info(f"Search completed in {search_duration:.2f}ms, found {len(results)} results")
     
     if request.headers.get('Accept') == 'application/json':
         return jsonify({
