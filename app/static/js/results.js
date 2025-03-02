@@ -44,18 +44,36 @@ function loadAudio(placeholder) {
     const audioControls = document.createElement('div');
     audioControls.className = 'audio-controls';
     
-    const backBtn = document.createElement('button');
-    backBtn.className = 'audio-btn';
-    backBtn.textContent = '⏪ -15s';
-    backBtn.onclick = function() { skipAudio(audio, -15); };
+    // Add 15-second back button
+    const back15Btn = document.createElement('button');
+    back15Btn.className = 'audio-btn';
+    back15Btn.textContent = '⏪ -15s';
+    back15Btn.onclick = function() { skipAudio(audio, -15); };
     
-    const forwardBtn = document.createElement('button');
-    forwardBtn.className = 'audio-btn';
-    forwardBtn.textContent = '+15s ⏩';
-    forwardBtn.onclick = function() { skipAudio(audio, 15); };
+    // Add 5-second back button
+    const back5Btn = document.createElement('button');
+    back5Btn.className = 'audio-btn';
+    back5Btn.textContent = '◀ -5s';
+    back5Btn.onclick = function() { skipAudio(audio, -5); };
     
-    audioControls.appendChild(backBtn);
-    audioControls.appendChild(forwardBtn);
+    // Add 5-second forward button
+    const forward5Btn = document.createElement('button');
+    forward5Btn.className = 'audio-btn';
+    forward5Btn.textContent = '+5s ▶';
+    forward5Btn.onclick = function() { skipAudio(audio, 5); };
+    
+    // Add 15-second forward button
+    const forward15Btn = document.createElement('button');
+    forward15Btn.className = 'audio-btn';
+    forward15Btn.textContent = '+15s ⏩';
+    forward15Btn.onclick = function() { skipAudio(audio, 15); };
+    
+    // Add buttons to controls in order
+    audioControls.appendChild(back15Btn);
+    audioControls.appendChild(back5Btn);
+    audioControls.appendChild(forward5Btn);
+    audioControls.appendChild(forward15Btn);
+    
     audioContainer.appendChild(audioControls);
     
     placeholder.replaceWith(audioContainer);
@@ -103,20 +121,28 @@ function addContextToResult(resultItem) {
     if (currentIndex === -1) return;
     
     // Get previous, current, and next segments
-    const prevSegment = currentIndex > 0 ? segments[currentIndex - 1] : null;
+    const prevSegments = [];
+    for (let i = Math.max(0, currentIndex - 2); i < currentIndex; i++) {
+        prevSegments.push(segments[i]);
+    }
+    
     const currentSegment = segments[currentIndex];
-    const nextSegment = currentIndex < segments.length - 1 ? segments[currentIndex + 1] : null;
+    
+    const nextSegments = [];
+    for (let i = currentIndex + 1; i <= Math.min(segments.length - 1, currentIndex + 2); i++) {
+        nextSegments.push(segments[i]);
+    }
     
     // Create context HTML
     let contextHtml = '';
     
-    // Add previous segment if available
-    if (prevSegment) {
-        contextHtml += `<div class="context-segment prev-segment" data-start="${prevSegment.start}" data-index="${currentIndex-1}">
-            <span class="segment-time">${formatTime(prevSegment.start)}</span>
-            ${prevSegment.text}
+    // Add previous segments if available
+    prevSegments.forEach((segment, idx) => {
+        contextHtml += `<div class="context-segment prev-segment" data-start="${segment.start}" data-index="${currentIndex - (prevSegments.length - idx)}">
+            <span class="segment-time">${formatTime(segment.start)}</span>
+            ${segment.text}
         </div>`;
-    }
+    });
     
     // Add current segment with highlighted query
     let currentText = currentSegment.text;
@@ -133,13 +159,13 @@ function addContextToResult(resultItem) {
         ${currentText}
     </div>`;
     
-    // Add next segment if available
-    if (nextSegment) {
-        contextHtml += `<div class="context-segment next-segment" data-start="${nextSegment.start}" data-index="${currentIndex+1}">
-            <span class="segment-time">${formatTime(nextSegment.start)}</span>
-            ${nextSegment.text}
+    // Add next segments if available
+    nextSegments.forEach((segment, idx) => {
+        contextHtml += `<div class="context-segment next-segment" data-start="${segment.start}" data-index="${currentIndex + idx + 1}">
+            <span class="segment-time">${formatTime(segment.start)}</span>
+            ${segment.text}
         </div>`;
-    }
+    });
     
     // Update the result text
     const textContainer = resultItem.querySelector('.result-text-container');

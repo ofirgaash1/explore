@@ -45,56 +45,85 @@ def get_available_files(force_refresh=False):
     global last_scan_time, files_cache
     
     if not force_refresh and not should_refresh_cache() and files_cache:
-        print("Using cached file list")
+        print(f"Using cached file list with {len(files_cache)} files")
         return files_cache
     
-    print("Scanning files (cache refresh)")
+    print("\n=== Starting File Scan ===")
     json_files = {}
     
-    # Helper function to find audio file
-    def find_audio_file(base_name):
-        for ext in ['.ogg', '.mp3']:
-            audio_path = Path(AUDIO_DIR) / f"{base_name}{ext}"
-            if audio_path.exists():
-                return audio_path
-        return None
-    
-    # Helper function to find JSON data
-    def find_json_file(json_path):
-        if json_path.is_file():
-            return json_path
-        if json_path.is_dir():
-            transcript_path = json_path / "full_transcript.json"
-            if transcript_path.exists():
-                return transcript_path
-        return None
-    
     try:
-        for item_path in Path(JSON_DIR).iterdir():
+        # List all items in JSON directory first
+        all_items = list(Path(JSON_DIR).iterdir())
+        print(f"\nFound {len(all_items)} total items in JSON directory:")
+        for item in all_items:
+            print(f"  - {item.name}")
+        
+        for item_path in all_items:
+            print(f"\nProcessing: {item_path}")
             base_name = item_path.name
             if item_path.is_file() and base_name.endswith('.json'):
+                print(f"  Direct JSON file found: {base_name}")
                 base_name = base_name[:-5]
+            elif item_path.is_dir():
+                print(f"  Directory found: {base_name}")
+            else:
+                print(f"  Skipping unknown item type: {base_name}")
+                continue
             
-            json_path = find_json_file(item_path)
+            # Find JSON file
+            json_path = None
+            if item_path.is_file():
+                json_path = item_path
+                print(f"  Using direct JSON file: {json_path}")
+            elif item_path.is_dir():
+                transcript_path = item_path / "full_transcript.json"
+                if transcript_path.exists():
+                    json_path = transcript_path
+                    print(f"  Found transcript in directory: {json_path}")
+                else:
+                    print(f"  No full_transcript.json found in directory: {item_path}")
+            
             if not json_path:
+                print(f"  ✗ No valid JSON found for {base_name}")
                 continue
                 
-            audio_path = find_audio_file(base_name)
+            # Find audio file
+            audio_path = None
+            for ext in ['.ogg', '.mp3']:
+                potential_path = Path(AUDIO_DIR) / f"{base_name}{ext}"
+                print(f"  Checking for audio: {potential_path}")
+                if potential_path.exists():
+                    audio_path = potential_path
+                    print(f"  ✓ Found matching audio: {audio_path}")
+                    break
+                    
             if audio_path:
+                print(f"  ✓ Adding to available files: {base_name}")
                 json_files[base_name] = {
                     'json_path': str(json_path),
                     'audio_path': str(audio_path),
                     'audio_format': audio_path.suffix[1:],
                     'last_modified': os.path.getmtime(json_path)
                 }
+            else:
+                print(f"  ✗ No matching audio file found for {base_name}")
         
         # Update cache
         files_cache = json_files
         last_scan_time = datetime.now()
         
+        print(f"\n=== Scan Complete ===")
+        print(f"Found {len(json_files)} valid file pairs:")
+        for name, info in json_files.items():
+            print(f"  - {name}")
+            print(f"    JSON: {info['json_path']}")
+            print(f"    Audio: {info['audio_path']}")
+        
     except Exception as e:
         print(f"Error scanning files: {e}")
-        if not files_cache:  # Only return empty if no cache exists
+        import traceback
+        traceback.print_exc()
+        if not files_cache:
             return {}
     
     return files_cache
@@ -127,10 +156,15 @@ def get_segments(json_path, source):
 
 def search_segments(query, source_file, available_files):
     """Search segments with cached data"""
+    print(f"\nSearching in {source_file}:")
     results = []
     file_info = available_files[source_file]
     
+    print(f"  Loading segments from: {file_info['json_path']}")
     segments = get_segments(file_info['json_path'], source_file)
+    print(f"  Found {len(segments)} total segments")
+    
+    match_count = 0
     for segment in segments:
         try:
             if query.lower() in str(segment['text']).lower():
@@ -139,10 +173,12 @@ def search_segments(query, source_file, available_files):
                     'text': segment['text'],
                     'source': source_file
                 })
+                match_count += 1
         except Exception as e:
-            print(f"Error processing segment in {source_file}: {e}")
+            print(f"  Error processing segment in {source_file}: {e}")
             continue
     
+    print(f"  Found {match_count} matches in this file")
     return results
 
 @app.route('/')
@@ -242,28 +278,35 @@ def check_audio(filename):
 @app.route('/search')
 def search():
     query = request.args.get('q', '')
-    print(f"\nNew search request for: '{query}'")
+    print(f"\n=== New Search Request ===")
+    print(f"Query: '{query}'")
     
     start_time = time.time()
     all_results = []
     
     available_files = get_available_files()
     selected_files = list(available_files.keys())
-    print(f"Files to search: {selected_files}")
+    print(f"\nSearching {len(selected_files)} files:")
+    for file_name in selected_files:
+        print(f"  - {file_name}")
     
     for file_name in selected_files:
         file_info = available_files[file_name]
         print(f"\nProcessing file: {file_name}")
-        print(f"JSON path: {file_info['json_path']}")
-        print(f"Audio path: {file_info['audio_path']}")
+        print(f"  JSON path: {file_info['json_path']}")
+        print(f"  Audio path: {file_info['audio_path']}")
         
         results = search_segments(query, file_name, available_files)
-        print(f"Found {len(results)} matches in {file_name}")
         all_results.extend(results)
     
     search_duration = (time.time() - start_time) * 1000
     result_count = len(all_results)
     file_count = len(selected_files)
+    
+    print(f"\n=== Search Complete ===")
+    print(f"Total results: {result_count}")
+    print(f"Files searched: {file_count}")
+    print(f"Duration: {search_duration:.2f}ms")
     
     if request.headers.get('Accept') == 'application/json':
         return jsonify({

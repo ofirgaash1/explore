@@ -58,4 +58,50 @@ button {
 
 button:hover {
     background-color: #3182ce;
+}
+
+.search-options {
+    margin: 0.75rem 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+}
+
+.checkbox-container {
+    display: flex;
+    align-items: center;
+    position: relative;
+    cursor: pointer;
+    user-select: none;
+}
+
+.checkbox-container input {
+    margin-right: 0.5rem;
+    cursor: pointer;
+}
+
+.checkbox-label {
+    font-size: 0.9rem;
+    color: #4a5568;
+}
+
+.checkbox-tooltip {
+    position: absolute;
+    bottom: 100%;
+    left: 0;
+    background-color: #2d3748;
+    color: white;
+    padding: 0.5rem;
+    border-radius: 4px;
+    font-size: 0.8rem;
+    white-space: nowrap;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s, visibility 0.2s;
+    z-index: 10;
+}
+
+.checkbox-container:hover .checkbox-tooltip {
+    opacity: 1;
+    visibility: visible;
 } 

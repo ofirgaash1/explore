@@ -21,6 +21,8 @@ def home():
 @bp.route('/search')
 def search():
     query = request.args.get('q', '')
+    use_regex = request.args.get('regex', '').lower() in ('true', 'on', '1', 'yes')
+    use_substring = request.args.get('substring', '').lower() in ('true', 'on', '1', 'yes')
     
     start_time = time.time()
     
@@ -36,8 +38,8 @@ def search():
         search_service.build_search_index()
     
     # Perform the search
-    logger.info(f"Searching for: '{query}'")
-    results = search_service.search(query)
+    logger.info(f"Searching for: '{query}' (regex: {use_regex}, substring: {use_substring})")
+    results = search_service.search(query, use_regex=use_regex, use_substring=use_substring)
     
     # Get available files for audio paths
     available_files = file_service.get_available_files()
@@ -80,4 +82,6 @@ def search():
                          available_files=available_files,
                          search_duration=search_duration,
                          audio_durations=audio_durations,
-                         total_audio_duration=total_audio_duration) 
+                         total_audio_duration=total_audio_duration,
+                         regex=use_regex,
+                         substring=use_substring) 

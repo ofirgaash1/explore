@@ -43,7 +43,7 @@ class SearchService:
         logger.info(f"Search index built in {total_time:.2f} seconds")
         logger.info(f"Total segments loaded: {total_segments}")
     
-    def search(self, query, use_regex=False):
+    def search(self, query, use_regex=False, use_substring=False):
         """Search all segments for the query"""
         start_time = time.time()
         
@@ -52,15 +52,18 @@ class SearchService:
             logger.info("Index not built yet, building now...")
             self.build_search_index()
         
-        logger.info(f"Searching for: '{query}'")
+        logger.info(f"Searching for: '{query}' (regex: {use_regex}, substring: {use_substring})")
         
         # Determine search strategy
         if use_regex:
             logger.info("Using regex search strategy")
             results = self._regex_search(query)
-        else:
-            logger.info("Using simple substring search")
+        elif use_substring:
+            logger.info("Using substring search strategy")
             results = self._substring_search(query)
+        else:
+            logger.info("Using full word search strategy")
+            results = self._full_word_search(query)
         
         search_time = time.time() - start_time
         logger.info(f"Search completed in {search_time*1000:.2f}ms, found {len(results)} results")
@@ -107,6 +110,36 @@ class SearchService:
         
         return results
     
+    def _full_word_search(self, query):
+        """Search for full word matches only"""
+        results = []
+        
+        # Create a regex pattern that matches the query as a whole word
+        # \b represents a word boundary
+        pattern = r'\b' + re.escape(query) + r'\b'
+        
+        try:
+            # Compile the regex pattern
+            regex = re.compile(pattern, re.IGNORECASE)
+            
+            for source, segments in self.all_segments.items():
+                for segment in segments:
+                    if 'text' not in segment:
+                        continue
+                    
+                    if regex.search(segment['text']):
+                        results.append({
+                            'start': segment['start'],
+                            'text': segment['text'],
+                            'source': source
+                        })
+        except re.error as e:
+            logger.error(f"Invalid regex pattern: {e}")
+            # Fall back to substring search if regex fails
+            return self._substring_search(query)
+        
+        return results
+    
     def _regex_search(self, pattern):
         """Search using regex pattern matching"""
         results = []
@@ -137,14 +170,60 @@ class SearchService:
         """Legacy method for compatibility - now just calls substring search"""
         return self._substring_search(query)
     
-    def search_segments(self, query, source_file, available_files):
+    def search_segments(self, query, source_file, available_files, use_substring=False):
         """Search segments in a specific source file"""
         # If we have the segments already loaded, use them
         if self.index_built and source_file in self.all_segments:
             results = []
-            query_lower = query.lower()
             
-            for segment in self.all_segments[source_file]:
+            if use_substring:
+                # Substring search
+                query_lower = query.lower()
+                for segment in self.all_segments[source_file]:
+                    try:
+                        if 'text' not in segment:
+                            continue
+                        
+                        if query_lower in segment['text'].lower():
+                            results.append({
+                                'start': segment['start'],
+                                'text': segment['text'],
+                                'source': source_file
+                            })
+                    except Exception as e:
+                        logger.error(f"Error processing segment in {source_file}: {e}")
+                        continue
+            else:
+                # Full word search
+                pattern = r'\b' + re.escape(query) + r'\b'
+                try:
+                    regex = re.compile(pattern, re.IGNORECASE)
+                    for segment in self.all_segments[source_file]:
+                        if 'text' not in segment:
+                            continue
+                        
+                        if regex.search(segment['text']):
+                            results.append({
+                                'start': segment['start'],
+                                'text': segment['text'],
+                                'source': source_file
+                            })
+                except re.error:
+                    # Fall back to substring search if regex fails
+                    return self.search_segments(query, source_file, available_files, use_substring=True)
+            
+            return results
+        
+        # Otherwise, load from file
+        file_info = available_files[source_file]
+        segments = self._get_segments(file_info['json_path'], source_file)
+        
+        results = []
+        
+        if use_substring:
+            # Substring search
+            query_lower = query.lower()
+            for segment in segments:
                 try:
                     if 'text' not in segment:
                         continue
@@ -158,30 +237,24 @@ class SearchService:
                 except Exception as e:
                     logger.error(f"Error processing segment in {source_file}: {e}")
                     continue
-            
-            return results
-        
-        # Otherwise, load from file
-        file_info = available_files[source_file]
-        segments = self._get_segments(file_info['json_path'], source_file)
-        
-        results = []
-        query_lower = query.lower()
-        
-        for segment in segments:
+        else:
+            # Full word search
+            pattern = r'\b' + re.escape(query) + r'\b'
             try:
-                if 'text' not in segment:
-                    continue
-                
-                if query_lower in segment['text'].lower():
-                    results.append({
-                        'start': segment['start'],
-                        'text': segment['text'],
-                        'source': source_file
-                    })
-            except Exception as e:
-                logger.error(f"Error processing segment in {source_file}: {e}")
-                continue
+                regex = re.compile(pattern, re.IGNORECASE)
+                for segment in segments:
+                    if 'text' not in segment:
+                        continue
+                    
+                    if regex.search(segment['text']):
+                        results.append({
+                            'start': segment['start'],
+                            'text': segment['text'],
+                            'source': source_file
+                        })
+            except re.error:
+                # Fall back to substring search if regex fails
+                return self.search_segments(query, source_file, available_files, use_substring=True)
         
         return results
     
