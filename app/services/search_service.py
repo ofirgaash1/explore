@@ -43,8 +43,8 @@ class SearchService:
         logger.info(f"Search index built in {total_time:.2f} seconds")
         logger.info(f"Total segments loaded: {total_segments}")
     
-    def search(self, query, use_regex=False, use_substring=False):
-        """Search all segments for the query"""
+    def search(self, query, use_regex=False, use_substring=False, max_results=100):
+        """Search all segments for the query with a limit on results"""
         start_time = time.time()
         
         # Build index if not already built
@@ -52,26 +52,29 @@ class SearchService:
             logger.info("Index not built yet, building now...")
             self.build_search_index()
         
-        logger.info(f"Searching for: '{query}' (regex: {use_regex}, substring: {use_substring})")
+        logger.info(f"Searching for: '{query}' (regex: {use_regex}, substring: {use_substring}, max_results: {max_results})")
         
         # Determine search strategy
         if use_regex:
             logger.info("Using regex search strategy")
-            results = self._regex_search(query)
+            results = self._regex_search(query, max_results)
         elif use_substring:
             logger.info("Using substring search strategy")
-            results = self._substring_search(query)
+            results = self._substring_search(query, max_results)
         else:
             logger.info("Using full word search strategy")
-            results = self._full_word_search(query)
+            results = self._full_word_search(query, max_results)
         
         search_time = time.time() - start_time
         logger.info(f"Search completed in {search_time*1000:.2f}ms, found {len(results)} results")
         
+        if len(results) >= max_results:
+            logger.info(f"Search stopped after reaching max_results limit ({max_results})")
+        
         return results
     
-    def _substring_search(self, query):
-        """Simple case-insensitive substring search"""
+    def _substring_search(self, query, max_results=100):
+        """Simple case-insensitive substring search with result limit"""
         results = []
         query_lower = query.lower()
         
@@ -83,6 +86,10 @@ class SearchService:
             source_results = 0
             
             for i, segment in enumerate(segments):
+                if len(results) >= max_results:
+                    logger.info(f"Reached max results ({max_results}), stopping search")
+                    break
+                    
                 if 'text' not in segment:
                     continue
                 
@@ -100,6 +107,9 @@ class SearchService:
                 'results': source_results,
                 'segments': len(segments)
             }
+            
+            if len(results) >= max_results:
+                break
         
         # Log the slowest sources
         sorted_sources = sorted(source_times.items(), key=lambda x: x[1]['time'], reverse=True)
@@ -110,8 +120,8 @@ class SearchService:
         
         return results
     
-    def _full_word_search(self, query):
-        """Search for full word matches only"""
+    def _full_word_search(self, query, max_results=100):
+        """Search for full word matches only with result limit"""
         results = []
         
         # Create a regex pattern that matches the query as a whole word
@@ -124,6 +134,10 @@ class SearchService:
             
             for source, segments in self.all_segments.items():
                 for segment in segments:
+                    if len(results) >= max_results:
+                        logger.info(f"Reached max results ({max_results}), stopping search")
+                        break
+                        
                     if 'text' not in segment:
                         continue
                     
@@ -133,15 +147,19 @@ class SearchService:
                             'text': segment['text'],
                             'source': source
                         })
+                
+                if len(results) >= max_results:
+                    break
+                    
         except re.error as e:
             logger.error(f"Invalid regex pattern: {e}")
             # Fall back to substring search if regex fails
-            return self._substring_search(query)
+            return self._substring_search(query, max_results)
         
         return results
     
-    def _regex_search(self, pattern):
-        """Search using regex pattern matching"""
+    def _regex_search(self, pattern, max_results=100):
+        """Search using regex pattern matching with result limit"""
         results = []
         
         try:
@@ -150,6 +168,10 @@ class SearchService:
             
             for source, segments in self.all_segments.items():
                 for segment in segments:
+                    if len(results) >= max_results:
+                        logger.info(f"Reached max results ({max_results}), stopping search")
+                        break
+                        
                     if 'text' not in segment:
                         continue
                     
@@ -159,19 +181,23 @@ class SearchService:
                             'text': segment['text'],
                             'source': source
                         })
+                
+                if len(results) >= max_results:
+                    break
+                    
         except re.error as e:
             logger.error(f"Invalid regex pattern: {e}")
             # Fall back to literal search if regex is invalid
-            return self._substring_search(pattern)
+            return self._substring_search(pattern, max_results)
         
         return results
     
-    def _full_scan_search(self, query):
+    def _full_scan_search(self, query, max_results=100):
         """Legacy method for compatibility - now just calls substring search"""
-        return self._substring_search(query)
+        return self._substring_search(query, max_results)
     
-    def search_segments(self, query, source_file, available_files, use_substring=False):
-        """Search segments in a specific source file"""
+    def search_segments(self, query, source_file, available_files, use_substring=False, max_results=100):
+        """Search segments in a specific source file with result limit"""
         # If we have the segments already loaded, use them
         if self.index_built and source_file in self.all_segments:
             results = []
@@ -180,6 +206,9 @@ class SearchService:
                 # Substring search
                 query_lower = query.lower()
                 for segment in self.all_segments[source_file]:
+                    if len(results) >= max_results:
+                        break
+                        
                     try:
                         if 'text' not in segment:
                             continue
@@ -199,6 +228,9 @@ class SearchService:
                 try:
                     regex = re.compile(pattern, re.IGNORECASE)
                     for segment in self.all_segments[source_file]:
+                        if len(results) >= max_results:
+                            break
+                            
                         if 'text' not in segment:
                             continue
                         
@@ -210,7 +242,7 @@ class SearchService:
                             })
                 except re.error:
                     # Fall back to substring search if regex fails
-                    return self.search_segments(query, source_file, available_files, use_substring=True)
+                    return self.search_segments(query, source_file, available_files, use_substring=True, max_results=max_results)
             
             return results
         
@@ -224,6 +256,9 @@ class SearchService:
             # Substring search
             query_lower = query.lower()
             for segment in segments:
+                if len(results) >= max_results:
+                    break
+                    
                 try:
                     if 'text' not in segment:
                         continue
@@ -243,6 +278,9 @@ class SearchService:
             try:
                 regex = re.compile(pattern, re.IGNORECASE)
                 for segment in segments:
+                    if len(results) >= max_results:
+                        break
+                        
                     if 'text' not in segment:
                         continue
                     
@@ -254,7 +292,7 @@ class SearchService:
                         })
             except re.error:
                 # Fall back to substring search if regex fails
-                return self.search_segments(query, source_file, available_files, use_substring=True)
+                return self.search_segments(query, source_file, available_files, use_substring=True, max_results=max_results)
         
         return results
     

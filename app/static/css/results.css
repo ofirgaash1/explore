@@ -358,4 +358,10 @@ audio {
     color: #718096;
     font-size: 0.85rem;
     font-weight: 500;
+}
+
+.limit-warning {
+    color: #e53e3e;
+    font-weight: 500;
+    margin-left: 0.5rem;
 } 

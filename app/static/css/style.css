@@ -104,4 +104,24 @@ button:hover {
 .checkbox-container:hover .checkbox-tooltip {
     opacity: 1;
     visibility: visible;
+}
+
+.input-container {
+    display: flex;
+    align-items: center;
+    position: relative;
+}
+
+.input-container label {
+    margin-right: 0.5rem;
+    font-size: 0.9rem;
+    color: #4a5568;
+}
+
+.input-container input[type="number"] {
+    width: 70px;
+    padding: 0.3rem;
+    font-size: 0.9rem;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
 } 

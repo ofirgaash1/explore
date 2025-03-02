@@ -24,6 +24,10 @@
             <input type="checkbox" name="regex" id="regex-checkbox" {% if regex %}checked{% endif %}>
             <span class="checkbox-label">Use regex pattern</span>
         </label>
+        <div class="input-container">
+            <label for="max-results">Max results:</label>
+            <input type="number" name="max_results" id="max-results" value="{{ max_results }}" min="1" max="1000">
+        </div>
     </div>
     <button type="submit">Search</button>
 </form>
@@ -32,6 +36,9 @@
     Found {{ results|length }} results in {{ available_files|length }} files
     {% if search_duration %}
     <span class="duration">(search took {{ search_duration|round(2) }}ms)</span>
+    {% endif %}
+    {% if limit_reached %}
+    <span class="limit-warning">Maximum result limit ({{ max_results }}) reached. Try a more specific search.</span>
     {% endif %}
 </div>
 
