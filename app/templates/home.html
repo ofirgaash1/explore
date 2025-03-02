@@ -1,11 +1,30 @@
 {% extends "base.html" %}
 
-{% block title %}Search{% endblock %}
+{% block title %}ivrit.ai Explore{% endblock %}
 
 {% block content %}
-<h1>ivrit.ai Explore</h1>
-<form action="{{ url_for('main.search') }}" method="GET" class="search-form">
-    <input type="text" name="q" placeholder="Enter search term..." autofocus>
-    <button type="submit">Search</button>
-</form>
+<div class="home-container">
+    <h1>ivrit.ai Explore</h1>
+    <form action="{{ url_for('main.search') }}" method="GET" class="search-form">
+        <input type="text" name="q" placeholder="Enter search term..." autofocus>
+        <div class="search-options">
+            <label class="checkbox-container">
+                <input type="checkbox" name="substring" id="substring-checkbox">
+                <span class="checkbox-label">Include partial word matches</span>
+                <span class="checkbox-tooltip">When unchecked, only matches complete words</span>
+            </label>
+            <label class="checkbox-container">
+                <input type="checkbox" name="regex" id="regex-checkbox">
+                <span class="checkbox-label">Use regex pattern</span>
+                <span class="checkbox-tooltip">Enable regular expression search</span>
+            </label>
+            <div class="input-container">
+                <label for="max-results">Max results:</label>
+                <input type="number" name="max_results" id="max-results" value="100" min="1" max="1000">
+                <span class="checkbox-tooltip">Limit the number of search results</span>
+            </div>
+        </div>
+        <button type="submit">Search</button>
+    </form>
+</div>
 {% endblock %} 
