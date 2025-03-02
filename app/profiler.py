@@ -23,9 +23,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-def profile_full_scan_search(query, num_runs=1, detailed=False):
-    """Profile the full scan search with a specific query"""
-    logger.info(f"Profiling full_scan_search with query: '{query}'")
+def profile_search(query, search_type="full_word", max_results=100, num_runs=1, detailed=False):
+    """Profile the search with a specific query and search type"""
+    logger.info(f"Profiling search with query: '{query}', type: {search_type}, max_results: {max_results}")
     
     # Initialize app and services
     app = create_app()
@@ -34,10 +34,26 @@ def profile_full_scan_search(query, num_runs=1, detailed=False):
         file_service = FileService(app)
         search_service = SearchService(file_service)
         
+        # Build the search index first
+        logger.info("Building search index...")
+        search_service.build_search_index()
+        
         # First, measure total execution time
         start_time = time.time()
-        for _ in range(num_runs):
-            results = search_service._full_scan_search(query)
+        
+        # Determine which search method to use
+        use_regex = search_type == "regex"
+        use_substring = search_type == "substring"
+        
+        for i in range(num_runs):
+            logger.info(f"Run {i+1}/{num_runs}...")
+            results = search_service.search(
+                query, 
+                use_regex=use_regex, 
+                use_substring=use_substring,
+                max_results=max_results
+            )
+            
         total_time = time.time() - start_time
         
         logger.info(f"Found {len(results)} results in {total_time:.2f} seconds (avg: {total_time/num_runs:.2f}s per run)")
@@ -46,7 +62,12 @@ def profile_full_scan_search(query, num_runs=1, detailed=False):
         pr = cProfile.Profile()
         pr.enable()
         
-        results = search_service._full_scan_search(query)
+        results = search_service.search(
+            query, 
+            use_regex=use_regex, 
+            use_substring=use_substring,
+            max_results=max_results
+        )
         
         pr.disable()
         
@@ -56,8 +77,13 @@ def profile_full_scan_search(query, num_runs=1, detailed=False):
         ps.print_stats(20)  # Print top 20 functions by cumulative time
         logger.info(s.getvalue())
         
-        # Also save detailed results to file
-        with open('profile_results.txt', 'w') as f:
+        # Also save detailed results to file - using UTF-8 encoding
+        with open('profile_results.txt', 'w', encoding='utf-8') as f:
+            f.write(f"Profile results for search query: '{query}'\n")
+            f.write(f"Search type: {search_type}\n")
+            f.write(f"Max results: {max_results}\n")
+            f.write(f"Number of runs: {num_runs}\n\n")
+            
             ps = pstats.Stats(pr, stream=f).sort_stats(SortKey.CUMULATIVE)
             ps.print_stats()
             
@@ -79,7 +105,13 @@ def profile_full_scan_search(query, num_runs=1, detailed=False):
                     file_pr = cProfile.Profile()
                     file_pr.enable()
                     
-                    search_service._search_segments(query, source, available_files)
+                    search_service.search_segments(
+                        query, 
+                        source, 
+                        available_files, 
+                        use_substring=(search_type == "substring"),
+                        max_results=max_results
+                    )
                     
                     file_pr.disable()
                     file_ps = pstats.Stats(file_pr, stream=f).sort_stats(SortKey.CUMULATIVE)
@@ -91,12 +123,21 @@ def profile_full_scan_search(query, num_runs=1, detailed=False):
 
 if __name__ == "__main__":
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Profile the full scan search')
+    parser = argparse.ArgumentParser(description='Profile the search functionality')
     parser.add_argument('query', nargs='?', default="שלום", help='Search query to profile')
+    parser.add_argument('--type', choices=['full_word', 'substring', 'regex'], default='full_word', 
+                        help='Type of search to profile')
+    parser.add_argument('--max', type=int, default=100, help='Maximum number of results')
     parser.add_argument('--runs', type=int, default=1, help='Number of runs to average')
     parser.add_argument('--detailed', action='store_true', help='Enable detailed profiling by file')
     
     args = parser.parse_args()
     
     # Run the profiler
-    profile_full_scan_search(args.query, num_runs=args.runs, detailed=args.detailed) 
+    profile_search(
+        args.query, 
+        search_type=args.type, 
+        max_results=args.max,
+        num_runs=args.runs, 
+        detailed=args.detailed
+    ) 
