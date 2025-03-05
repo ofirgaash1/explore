@@ -1,6 +1,7 @@
 from flask import Blueprint, render_template, request, jsonify, current_app
 from ..services.search_service import SearchService
 from ..services.file_service import FileService
+from ..services.analytics_service import track_performance
 # from pydub import AudioSegment  # Commented out
 import time
 import os
@@ -16,9 +17,14 @@ file_service = None
 
 @bp.route('/')
 def home():
+    # Track page view
+    analytics = current_app.config.get('ANALYTICS_SERVICE')
+    if analytics:
+        analytics.capture_event('page_viewed', {'page': 'home'})
     return render_template('home.html')
 
 @bp.route('/search')
+@track_performance('search_executed', include_args=['query', 'use_regex', 'use_substring', 'max_results', 'page'])
 def search():
     query = request.args.get('q', '')
     use_regex = request.args.get('regex', '').lower() in ('true', 'on', '1', 'yes')
@@ -91,6 +97,20 @@ def search():
     search_duration = (time.time() - start_time) * 1000  # Convert to milliseconds
     logger.info(f"Search completed in {search_duration:.2f}ms, found {pagination['total_results']} total results")
     
+    # Track search analytics
+    analytics = current_app.config.get('ANALYTICS_SERVICE')
+    if analytics:
+        analytics.capture_search(
+            query=query,
+            use_regex=use_regex,
+            use_substring=use_substring,
+            max_results=max_results,
+            page=page,
+            execution_time_ms=search_duration,
+            results_count=len(results),
+            total_results=pagination['total_results']
+        )
+    
     if request.headers.get('Accept') == 'application/json':
         return jsonify({
             'results': results,
@@ -113,4 +133,12 @@ def search():
                          total_audio_duration=total_audio_duration,
                          regex=use_regex,
                          substring=use_substring,
-                         max_results=max_results) 
+                         max_results=max_results)
+
+@bp.route('/privacy')
+def privacy_policy():
+    # Track page view
+    analytics = current_app.config.get('ANALYTICS_SERVICE')
+    if analytics:
+        analytics.capture_event('page_viewed', {'page': 'privacy_policy'})
+    return render_template('privacy.html') 

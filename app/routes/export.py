@@ -4,17 +4,22 @@ import csv
 from pydub import AudioSegment
 from ..services.file_service import FileService
 from ..services.search_service import SearchService
+from ..services.analytics_service import track_performance
 import logging
+import time
 
 logger = logging.getLogger(__name__)
 
 bp = Blueprint('export', __name__)
 
 @bp.route('/export/results/<query>')
+@track_performance('export_csv', include_args=['query'])
 def export_results_csv(query):
     # Get the same parameters as the search route
     use_regex = request.args.get('regex', '').lower() in ('true', 'on', '1', 'yes')
     use_substring = request.args.get('substring', '').lower() in ('true', 'on', '1', 'yes')
+    
+    start_time = time.time()
     
     # Get search service from main module
     from ..routes import main
@@ -49,6 +54,17 @@ def export_results_csv(query):
     for r in all_results:
         text = r['text'].encode('utf-8', errors='replace').decode('utf-8')
         writer.writerow([r['source'], text, r['start'], r.get('end', '')])
+    
+    execution_time = (time.time() - start_time) * 1000
+    
+    # Track export analytics
+    analytics = current_app.config.get('ANALYTICS_SERVICE')
+    if analytics:
+        analytics.capture_export(
+            export_type='csv',
+            query=query,
+            execution_time_ms=execution_time
+        )
     
     output.seek(0)
     return send_file(
