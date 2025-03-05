@@ -1,17 +1,37 @@
-from flask import Blueprint, request, send_file, current_app
+from flask import Blueprint, request, send_file, current_app, jsonify
 import io
 import csv
 from pydub import AudioSegment
 from ..services.file_service import FileService
 from ..services.search_service import SearchService
+import logging
+
+logger = logging.getLogger(__name__)
 
 bp = Blueprint('export', __name__)
 
 @bp.route('/export/results/<query>')
 def export_results_csv(query):
-    file_service = FileService(current_app)
-    search_service = SearchService(file_service)
-    results = search_service.search(query)
+    # Get the same parameters as the search route
+    use_regex = request.args.get('regex', '').lower() in ('true', 'on', '1', 'yes')
+    use_substring = request.args.get('substring', '').lower() in ('true', 'on', '1', 'yes')
+    
+    # Get search service from main module
+    from ..routes import main
+    search_service = main.search_service
+    
+    # Check if we already have results for this query
+    search_key = f"{query}_{use_regex}_{use_substring}"
+    
+    if search_service.last_search_results.get('key') == search_key:
+        # Use the cached results - this is the optimization
+        logger.info(f"Using cached search results for CSV export: {query}")
+        all_results = search_service.last_search_results['results']
+    else:
+        # If no cached results, perform a new search (but get all results)
+        logger.info(f"No cached results found, performing new search for CSV export: {query}")
+        search_result = search_service.search(query, use_regex=use_regex, use_substring=use_substring, max_results=None, page=1)
+        all_results = search_result['results']
     
     # Create CSV in memory with UTF-8 BOM for Excel compatibility
     output = io.StringIO()
@@ -19,7 +39,7 @@ def export_results_csv(query):
     writer = csv.writer(output, dialect='excel')
     writer.writerow(['Source', 'Text', 'Start Time', 'End Time'])
     
-    for r in results:
+    for r in all_results:
         text = r['text'].encode('utf-8', errors='replace').decode('utf-8')
         writer.writerow([r['source'], text, r['start'], r.get('end', '')])
     
