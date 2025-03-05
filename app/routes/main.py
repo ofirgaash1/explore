@@ -32,6 +32,14 @@ def search():
     except ValueError:
         max_results = 100
     
+    # Get page parameter with default of 1
+    try:
+        page = int(request.args.get('page', 1))
+        # Ensure page is at least 1
+        page = max(1, page)
+    except ValueError:
+        page = 1
+    
     start_time = time.time()
     
     # Use the global search service that was initialized in run.py
@@ -46,8 +54,17 @@ def search():
         search_service.build_search_index()
     
     # Perform the search
-    logger.info(f"Searching for: '{query}' (regex: {use_regex}, substring: {use_substring}, max_results: {max_results})")
-    results = search_service.search(query, use_regex=use_regex, use_substring=use_substring, max_results=max_results)
+    logger.info(f"Searching for: '{query}' (regex: {use_regex}, substring: {use_substring}, max_results: {max_results}, page: {page})")
+    search_result = search_service.search(
+        query, 
+        use_regex=use_regex, 
+        use_substring=use_substring, 
+        max_results=max_results,
+        page=page
+    )
+    
+    results = search_result['results']
+    pagination = search_result['pagination']
     
     # Get available files for audio paths
     available_files = file_service.get_available_files()
@@ -72,28 +89,28 @@ def search():
     '''
     
     search_duration = (time.time() - start_time) * 1000  # Convert to milliseconds
-    logger.info(f"Search completed in {search_duration:.2f}ms, found {len(results)} results")
+    logger.info(f"Search completed in {search_duration:.2f}ms, found {pagination['total_results']} total results")
     
     if request.headers.get('Accept') == 'application/json':
         return jsonify({
             'results': results,
+            'pagination': pagination,
             'stats': {
                 'count': len(results),
+                'total_count': pagination['total_results'],
                 'duration_ms': search_duration,
-                'total_audio_minutes': total_audio_duration,
-                'max_results': max_results,
-                'limit_reached': len(results) >= max_results
+                'total_audio_minutes': total_audio_duration
             }
         })
         
     return render_template('results.html', 
                          query=query,
                          results=results,
+                         pagination=pagination,
                          available_files=available_files,
                          search_duration=search_duration,
                          audio_durations=audio_durations,
                          total_audio_duration=total_audio_duration,
                          regex=use_regex,
                          substring=use_substring,
-                         max_results=max_results,
-                         limit_reached=len(results) >= max_results) 
+                         max_results=max_results) 
