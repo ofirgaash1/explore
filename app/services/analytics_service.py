@@ -50,24 +50,29 @@ class AnalyticsService:
         except Exception as e:
             logger.error(f"Failed to capture event: {str(e)}")
     
-    def capture_search(self, query, use_regex, use_substring, max_results, page, 
-                      execution_time_ms, results_count, total_results):
-        """Capture search event with detailed metrics"""
-        properties = {
-            'query': query,
-            'use_regex': use_regex,
-            'use_substring': use_substring,
-            'max_results': max_results,
-            'page': page,
-            'execution_time_ms': execution_time_ms,
-            'results_count': results_count,
-            'total_results': total_results,
-            'url': request.url,
-            'referrer': request.referrer,
-            'user_agent': request.user_agent.string,
-        }
+    def capture_search(self, query, use_regex=False, use_substring=False, max_results=None, 
+                      page=1, execution_time_ms=None, results_count=0, total_results=0, progressive=False):
+        """Track search events with detailed properties"""
+        if self.disabled:
+            return
         
-        self.capture_event('search_performed', properties)
+        try:
+            properties = {
+                'query': query,
+                'use_regex': use_regex,
+                'use_substring': use_substring,
+                'max_results': max_results,
+                'page': page,
+                'execution_time_ms': execution_time_ms,
+                'results_count': results_count,
+                'total_results': total_results,
+                'progressive': progressive
+            }
+            
+            self.capture_event('search_executed', properties)
+            logger.debug(f"Tracked search: {query}")
+        except Exception as e:
+            logger.error(f"Failed to track search: {str(e)}")
     
     def capture_export(self, export_type, query=None, source=None, format=None, execution_time_ms=None):
         """Capture export event with details"""

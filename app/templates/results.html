@@ -188,6 +188,17 @@
 {% else %}
 <p class="no-results">No results found</p>
 {% endif %}
+
+<div class="search-stats">
+    <p id="results-count">
+        {% if pagination.still_searching %}
+            {{ pagination.total_results }} results found so far (still searching...)
+        {% else %}
+            {{ pagination.total_results }} results found
+        {% endif %}
+    </p>
+    <p>Search completed in {{ "%.2f"|format(search_duration) }}ms</p>
+</div>
 {% endblock %}
 
 {% block scripts %}

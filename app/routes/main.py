@@ -46,6 +46,9 @@ def search():
     except ValueError:
         page = 1
     
+    # Enable progressive loading for first page of new searches
+    progressive = page == 1 and request.args.get('progressive', '').lower() in ('true', 'on', '1', 'yes')
+    
     start_time = time.time()
     
     # Use the global search service that was initialized in run.py
@@ -60,13 +63,14 @@ def search():
         search_service.build_search_index()
     
     # Perform the search
-    logger.info(f"Searching for: '{query}' (regex: {use_regex}, substring: {use_substring}, max_results: {max_results}, page: {page})")
+    logger.info(f"Searching for: '{query}' (regex: {use_regex}, substring: {use_substring}, max_results: {max_results}, page: {page}, progressive: {progressive})")
     search_result = search_service.search(
         query, 
         use_regex=use_regex, 
         use_substring=use_substring, 
         max_results=max_results,
-        page=page
+        page=page,
+        progressive=progressive
     )
     
     results = search_result['results']
@@ -95,7 +99,7 @@ def search():
     '''
     
     search_duration = (time.time() - start_time) * 1000  # Convert to milliseconds
-    logger.info(f"Search completed in {search_duration:.2f}ms, found {pagination['total_results']} total results")
+    logger.info(f"Search completed in {search_duration:.2f}ms, found {pagination['total_results']} total results so far")
     
     # Track search analytics
     analytics = current_app.config.get('ANALYTICS_SERVICE')
@@ -108,7 +112,8 @@ def search():
             page=page,
             execution_time_ms=search_duration,
             results_count=len(results),
-            total_results=pagination['total_results']
+            total_results=pagination['total_results'],
+            progressive=progressive
         )
     
     if request.headers.get('Accept') == 'application/json':
@@ -119,7 +124,8 @@ def search():
                 'count': len(results),
                 'total_count': pagination['total_results'],
                 'duration_ms': search_duration,
-                'total_audio_minutes': total_audio_duration
+                'total_audio_minutes': total_audio_duration,
+                'still_searching': pagination.get('still_searching', False)
             }
         })
         
@@ -133,7 +139,8 @@ def search():
                          total_audio_duration=total_audio_duration,
                          regex=use_regex,
                          substring=use_substring,
-                         max_results=max_results)
+                         max_results=max_results,
+                         progressive=progressive)
 
 @bp.route('/privacy')
 def privacy_policy():
