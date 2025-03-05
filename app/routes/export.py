@@ -28,9 +28,16 @@ def export_results_csv(query):
         logger.info(f"Using cached search results for CSV export: {query}")
         all_results = search_service.last_search_results['results']
     else:
-        # If no cached results, perform a new search (but get all results)
+        # If no cached results, perform a new search to get all results
         logger.info(f"No cached results found, performing new search for CSV export: {query}")
-        search_result = search_service.search(query, use_regex=use_regex, use_substring=use_substring, max_results=None, page=1)
+        # Use a very large max_results instead of None to avoid the pagination issue
+        search_result = search_service.search(
+            query, 
+            use_regex=use_regex, 
+            use_substring=use_substring, 
+            max_results=1000000,  # Very large number instead of None
+            page=1
+        )
         all_results = search_result['results']
     
     # Create CSV in memory with UTF-8 BOM for Excel compatibility

@@ -96,6 +96,21 @@ class SearchService:
             logger.info(f"Fetching page {page} of existing search for: '{query}'")
             all_results = self.last_search_results['results']
         
+        # Handle the case where we want all results (no pagination)
+        if max_results is None:
+            logger.info(f"Returning all {len(all_results)} results (no pagination)")
+            return {
+                'results': all_results,
+                'pagination': {
+                    'page': 1,
+                    'total_pages': 1,
+                    'total_results': len(all_results),
+                    'per_page': len(all_results),
+                    'has_next': False,
+                    'has_prev': False
+                }
+            }
+        
         # Calculate pagination
         start_idx = (page - 1) * max_results
         end_idx = start_idx + max_results
