@@ -553,7 +553,7 @@ function updateResultsCount(pagination) {
             if (pagination.still_searching) {
                 statsText = `Showing ${start} to ${end} of ${pagination.total_results} results found so far (still searching...)`;
                 
-                // Remove duration span if still searching
+                // Always remove duration span if still searching
                 const durationSpan = statsElement.querySelector('.duration');
                 if (durationSpan) {
                     durationSpan.remove();
@@ -565,14 +565,11 @@ function updateResultsCount(pagination) {
             statsText = 'No results found';
         }
         
-        // Update the stats text without affecting the duration span
-        const currentDurationSpan = statsElement.querySelector('.duration');
+        // Update the stats text without the duration span
         statsElement.innerHTML = statsText;
         
-        // Re-add the duration span if it existed and search is complete
-        if (currentDurationSpan && !pagination.still_searching) {
-            statsElement.appendChild(currentDurationSpan);
-        }
+        // We'll only add the duration span when the search is fully complete
+        // in the checkForMoreResults function
     }
     
     // Remove the redundant results-count element at the bottom if it exists
@@ -631,7 +628,14 @@ function checkForMoreResults() {
             // Update the search duration now that we have the final time
             const statsElement = document.querySelector('.stats');
             if (statsElement) {
-                // Create or update the duration span
+                // Only add the duration span now that the search is complete
+                // First ensure any existing one is removed
+                const existingDurationSpan = statsElement.querySelector('.duration');
+                if (existingDurationSpan) {
+                    existingDurationSpan.remove();
+                }
+                
+                // Create a new duration span with the final time
                 let durationSpan = document.createElement('span');
                 durationSpan.className = 'duration';
                 durationSpan.textContent = ` (search took ${totalDuration.toFixed(2)}ms)`;
@@ -670,6 +674,15 @@ document.addEventListener('DOMContentLoaded', function() {
         const resultsCountElement = document.getElementById('results-count');
         if (resultsCountElement && resultsCountElement.parentNode) {
             resultsCountElement.parentNode.remove();
+        }
+        
+        // Remove any existing duration span to start fresh
+        const statsElement = document.querySelector('.stats');
+        if (statsElement) {
+            const durationSpan = statsElement.querySelector('.duration');
+            if (durationSpan) {
+                durationSpan.remove();
+            }
         }
         
         // Check if progressive loading is enabled
