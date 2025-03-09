@@ -8,11 +8,12 @@ class FileService:
         self.app = app
         
         # Use the data directory from app config, or fall back to default
-        self.data_dir = app.config.get('DATA_DIR', os.path.join(app.root_path, '..', 'data'))
+        data_dir = app.config.get('DATA_DIR', os.path.join(app.root_path, '..', 'data'))
         
-        # Define paths for JSON and audio files
-        self.json_dir = os.path.join(self.data_dir, 'json')
-        self.audio_dir = os.path.join(self.data_dir, 'audio')
+        # Convert string paths to Path objects
+        self.data_dir = Path(data_dir)
+        self.json_dir = self.data_dir / 'json'
+        self.audio_dir = self.data_dir / 'audio'
         
         # Create directories if they don't exist
         os.makedirs(self.json_dir, exist_ok=True)
