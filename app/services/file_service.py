@@ -1,10 +1,25 @@
 from pathlib import Path
 from .cache_service import cache, load_json_file
+import os
 
 class FileService:
     def __init__(self, app):
-        self.json_dir = app.config['JSON_DIR']
-        self.audio_dir = app.config['AUDIO_DIR']
+        """Initialize the file service with the Flask app"""
+        self.app = app
+        
+        # Use the data directory from app config, or fall back to default
+        self.data_dir = app.config.get('DATA_DIR', os.path.join(app.root_path, '..', 'data'))
+        
+        # Define paths for JSON and audio files
+        self.json_dir = os.path.join(self.data_dir, 'json')
+        self.audio_dir = os.path.join(self.data_dir, 'audio')
+        
+        # Create directories if they don't exist
+        os.makedirs(self.json_dir, exist_ok=True)
+        os.makedirs(self.audio_dir, exist_ok=True)
+        
+        # Cache for available files
+        self._available_files = None
     
     def get_available_files(self, force_refresh=False):
         if not force_refresh and not cache.should_refresh():
