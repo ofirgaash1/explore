@@ -6,12 +6,79 @@
     <title>{% block title %}ivrit.ai Explore{% endblock %}</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Rubik:wght@400;500;600&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/favicon.png') }}">
     {% block head %}{% endblock %}
+    
+    <!-- PostHog Analytics -->
+    <script>
+        !function(t,e){var o,n,p,r;e.__SV||(window.posthog=e,e._i=[],e.init=function(i,s,a){function g(t,e){var o=e.split(".");2==o.length&&(t=t[o[0]],e=o[1]),t[e]=function(){t.push([e].concat(Array.prototype.slice.call(arguments,0)))}}(p=t.createElement("script")).type="text/javascript",p.async=!0,p.src=s.api_host+"/static/array.js",(r=t.getElementsByTagName("script")[0]).parentNode.insertBefore(p,r);var u=e;for(void 0!==a?u=e[a]=[]:a="posthog",u.people=u.people||[],u.toString=function(t){var e="posthog";return"posthog"!==a&&(e+="."+a),t||(e+=" (stub)"),e},u.people.toString=function(){return u.toString(1)+".people (stub)"},o="capture identify alias people.set people.set_once set_config register register_once unregister opt_out_capturing has_opted_out_capturing opt_in_capturing reset isFeatureEnabled onFeatureFlags getFeatureFlag getFeatureFlagPayload reloadFeatureFlags group updateEarlyAccessFeatureEnrollment getEarlyAccessFeatures getActiveMatchingSurveys getSurveys".split(" "),n=0;n<o.length;n++)g(u,o[n]);e._i.push([i,s,a])},e.__SV=1)}(document,window.posthog||[]);
+        posthog.init('{{ config.get("POSTHOG_API_KEY", "") }}', {
+            api_host: '{{ config.get("POSTHOG_HOST", "https://app.posthog.com") }}',
+            capture_pageview: true,
+            capture_pageleave: true,
+            autocapture: true
+        });
+    </script>
 </head>
 <body>
     <div class="container">
         {% block content %}{% endblock %}
     </div>
+    
+    <div class="privacy-notice">
+        <p>This site uses analytics to improve user experience. By using this site, you agree to our <a href="/privacy">Privacy Policy</a>.</p>
+    </div>
+    
     {% block scripts %}{% endblock %}
+    
+    <!-- Custom PostHog tracking -->
+    <script>
+        // Track form submissions
+        document.addEventListener('submit', function(e) {
+            if (e.target.classList.contains('search-form')) {
+                const formData = new FormData(e.target);
+                posthog.capture('search_form_submitted', {
+                    query: formData.get('q'),
+                    use_regex: formData.get('regex') ? true : false,
+                    use_substring: formData.get('substring') ? true : false,
+                    max_results: formData.get('max_results')
+                });
+            }
+        });
+        
+        // Track button clicks
+        document.addEventListener('click', function(e) {
+            if (e.target.tagName === 'BUTTON' || 
+                (e.target.tagName === 'A' && e.target.classList.contains('btn'))) {
+                
+                posthog.capture('button_clicked', {
+                    button_text: e.target.innerText,
+                    button_class: e.target.className,
+                    page: window.location.pathname
+                });
+            }
+        });
+        
+        // Track audio playback
+        document.addEventListener('play', function(e) {
+            if (e.target.tagName === 'AUDIO') {
+                posthog.capture('audio_played', {
+                    source: e.target.dataset.source,
+                    start_time: e.target.dataset.currentTime
+                });
+            }
+        }, true);
+        
+        // Track errors
+        window.addEventListener('error', function(e) {
+            posthog.capture('js_error', {
+                message: e.message,
+                filename: e.filename,
+                lineno: e.lineno,
+                colno: e.colno,
+                page: window.location.pathname
+            });
+        });
+    </script>
 </body>
 </html> 

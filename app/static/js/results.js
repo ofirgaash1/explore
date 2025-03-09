@@ -380,4 +380,328 @@ document.addEventListener('DOMContentLoaded', function() {
         const jsonPath = `/export/source/${encodeURIComponent(sourceId)}?type=json`;
         initializeSourceSegments(sourceId, jsonPath);
     });
+});
+
+// Function to update pagination UI
+function updatePagination(pagination) {
+    console.log("Updating pagination:", pagination);
+    
+    // Only create/update the bottom pagination
+    ensureBottomPaginationContainer();
+    
+    const paginationElement = document.querySelector('.bottom-pagination');
+    if (!paginationElement) {
+        console.warn("No pagination element found");
+        return;
+    }
+    
+    // Get current search parameters
+    const searchParams = new URLSearchParams(window.location.search);
+    const query = searchParams.get('q');
+    const regex = searchParams.has('regex');
+    const substring = searchParams.has('substring');
+    const maxResults = parseInt(searchParams.get('max_results') || '100');
+    
+    // Create pagination info div
+    const paginationInfo = document.createElement('div');
+    paginationInfo.className = 'pagination-info';
+    paginationInfo.textContent = `Page ${pagination.page} of ${pagination.total_pages}`;
+    
+    // Create pagination controls div
+    const paginationControls = document.createElement('div');
+    paginationControls.className = 'pagination-controls';
+    
+    // Add previous button if needed
+    if (pagination.has_prev) {
+        const prevButton = document.createElement('a');
+        prevButton.href = `/search?q=${encodeURIComponent(query)}&page=${pagination.page - 1}` +
+                         `&max_results=${maxResults}` +
+                         (regex ? '&regex=true' : '') +
+                         (substring ? '&substring=true' : '');
+        prevButton.className = 'pagination-btn';
+        prevButton.textContent = '← Previous';
+        paginationControls.appendChild(prevButton);
+    } else {
+        const prevButton = document.createElement('span');
+        prevButton.className = 'pagination-btn disabled';
+        prevButton.textContent = '← Previous';
+        paginationControls.appendChild(prevButton);
+    }
+    
+    // Add page numbers
+    const startPage = Math.max(1, pagination.page - 2);
+    const endPage = Math.min(pagination.total_pages, startPage + 4);
+    
+    if (startPage > 1) {
+        const firstPageLink = document.createElement('a');
+        firstPageLink.href = `/search?q=${encodeURIComponent(query)}&page=1` +
+                           `&max_results=${maxResults}` +
+                           (regex ? '&regex=true' : '') +
+                           (substring ? '&substring=true' : '');
+        firstPageLink.className = 'pagination-btn';
+        firstPageLink.textContent = '1';
+        paginationControls.appendChild(firstPageLink);
+        
+        if (startPage > 2) {
+            const ellipsis = document.createElement('span');
+            ellipsis.className = 'pagination-ellipsis';
+            ellipsis.textContent = '...';
+            paginationControls.appendChild(ellipsis);
+        }
+    }
+    
+    for (let i = startPage; i <= endPage; i++) {
+        if (i === pagination.page) {
+            const activePageBtn = document.createElement('span');
+            activePageBtn.className = 'pagination-btn active';
+            activePageBtn.textContent = i.toString();
+            paginationControls.appendChild(activePageBtn);
+        } else {
+            const pageLink = document.createElement('a');
+            pageLink.href = `/search?q=${encodeURIComponent(query)}&page=${i}` +
+                           `&max_results=${maxResults}` +
+                           (regex ? '&regex=true' : '') +
+                           (substring ? '&substring=true' : '');
+            pageLink.className = 'pagination-btn';
+            pageLink.textContent = i.toString();
+            paginationControls.appendChild(pageLink);
+        }
+    }
+    
+    if (endPage < pagination.total_pages) {
+        if (endPage < pagination.total_pages - 1) {
+            const ellipsis = document.createElement('span');
+            ellipsis.className = 'pagination-ellipsis';
+            ellipsis.textContent = '...';
+            paginationControls.appendChild(ellipsis);
+        }
+        
+        const lastPageLink = document.createElement('a');
+        lastPageLink.href = `/search?q=${encodeURIComponent(query)}&page=${pagination.total_pages}` +
+                          `&max_results=${maxResults}` +
+                          (regex ? '&regex=true' : '') +
+                          (substring ? '&substring=true' : '');
+        lastPageLink.className = 'pagination-btn';
+        lastPageLink.textContent = pagination.total_pages.toString();
+        paginationControls.appendChild(lastPageLink);
+    }
+    
+    // Add next button if needed
+    if (pagination.has_next) {
+        const nextButton = document.createElement('a');
+        nextButton.href = `/search?q=${encodeURIComponent(query)}&page=${pagination.page + 1}` +
+                         `&max_results=${maxResults}` +
+                         (regex ? '&regex=true' : '') +
+                         (substring ? '&substring=true' : '');
+        nextButton.className = 'pagination-btn';
+        nextButton.textContent = 'Next →';
+        paginationControls.appendChild(nextButton);
+    } else {
+        const nextButton = document.createElement('span');
+        nextButton.className = 'pagination-btn disabled';
+        nextButton.textContent = 'Next →';
+        paginationControls.appendChild(nextButton);
+    }
+    
+    // Clear and update the pagination element
+    paginationElement.innerHTML = '';
+    paginationElement.appendChild(paginationInfo);
+    paginationElement.appendChild(paginationControls);
+    
+    // Also update the results count in the stats section
+    updateResultsCount(pagination);
+}
+
+// Function to ensure only bottom pagination container exists
+function ensureBottomPaginationContainer() {
+    const resultsContainer = document.querySelector('.results');
+    if (!resultsContainer) return;
+    
+    // Remove any top pagination if it exists
+    const topPagination = document.querySelector('.pagination:not(.bottom-pagination)');
+    if (topPagination) {
+        topPagination.remove();
+    }
+    
+    // Check if bottom pagination exists
+    let bottomPagination = document.querySelector('.bottom-pagination');
+    if (!bottomPagination) {
+        console.log("Creating bottom pagination container");
+        bottomPagination = document.createElement('div');
+        bottomPagination.className = 'pagination bottom-pagination';
+        
+        // Insert after results or before search-stats
+        const searchStats = document.querySelector('.search-stats');
+        if (searchStats) {
+            resultsContainer.parentNode.insertBefore(bottomPagination, searchStats);
+        } else {
+            resultsContainer.parentNode.appendChild(bottomPagination);
+        }
+    }
+}
+
+// Function to update the results count in the stats section
+function updateResultsCount(pagination) {
+    // Update the stats section at the top
+    const statsElement = document.querySelector('.stats');
+    if (statsElement) {
+        let statsText = '';
+        if (pagination.total_results > 0) {
+            const start = (pagination.page - 1) * pagination.per_page + 1;
+            const end = Math.min(pagination.page * pagination.per_page, pagination.total_results);
+            
+            if (pagination.still_searching) {
+                statsText = `Showing ${start} to ${end} of ${pagination.total_results} results found so far (still searching...)`;
+                
+                // Always remove duration span if still searching
+                const durationSpan = statsElement.querySelector('.duration');
+                if (durationSpan) {
+                    durationSpan.remove();
+                }
+            } else {
+                statsText = `Showing ${start} to ${end} of ${pagination.total_results} results`;
+            }
+        } else {
+            statsText = 'No results found';
+        }
+        
+        // Update the stats text without the duration span
+        statsElement.innerHTML = statsText;
+        
+        // We'll only add the duration span when the search is fully complete
+        // in the checkForMoreResults function
+    }
+    
+    // Remove the redundant results-count element at the bottom if it exists
+    const resultsCountElement = document.getElementById('results-count');
+    if (resultsCountElement && resultsCountElement.parentNode) {
+        resultsCountElement.parentNode.remove();
+    }
+}
+
+// Function to check for more results if progressive search is active
+function checkForMoreResults() {
+    // Store the start time of the progressive search if not already set
+    if (!window.searchStartTime) {
+        window.searchStartTime = Date.now();
+    }
+    
+    const searchParams = new URLSearchParams(window.location.search);
+    const query = searchParams.get('q');
+    const page = parseInt(searchParams.get('page') || '1');
+    const regex = searchParams.has('regex');
+    const substring = searchParams.has('substring');
+    const maxResults = parseInt(searchParams.get('max_results') || '100');
+    
+    // Build API URL
+    const apiUrl = `/search?q=${encodeURIComponent(query)}&page=${page}` + 
+                  `&max_results=${maxResults}` +
+                  (regex ? '&regex=true' : '') +
+                  (substring ? '&substring=true' : '');
+    
+    // Make AJAX request to check for updated results
+    fetch(apiUrl, {
+        headers: {
+            'Accept': 'application/json'
+        }
+    })
+    .then(response => response.json())
+    .then(data => {
+        console.log("Progressive search update:", data);
+        
+        // Check if search is still in progress
+        if (data.stats.still_searching) {
+            // Update pagination if needed
+            if (data.pagination.total_pages > 0) {
+                updatePagination(data.pagination);
+            }
+            
+            // Check again in 1 second
+            setTimeout(checkForMoreResults, 1000);
+        } else {
+            // Search is complete, update the UI
+            updatePagination(data.pagination);
+            
+            // Calculate total search duration from our stored start time
+            const totalDuration = Date.now() - window.searchStartTime;
+            
+            // Update the search duration now that we have the final time
+            const statsElement = document.querySelector('.stats');
+            if (statsElement) {
+                // Only add the duration span now that the search is complete
+                // First ensure any existing one is removed
+                const existingDurationSpan = statsElement.querySelector('.duration');
+                if (existingDurationSpan) {
+                    existingDurationSpan.remove();
+                }
+                
+                // Create a new duration span with the final time
+                let durationSpan = document.createElement('span');
+                durationSpan.className = 'duration';
+                durationSpan.textContent = ` (search took ${totalDuration.toFixed(2)}ms)`;
+                statsElement.appendChild(durationSpan);
+            }
+            
+            // Reset the search start time
+            window.searchStartTime = null;
+            
+            // If we have no results on the current page but there are results available,
+            // redirect to the first page
+            if (data.results.length === 0 && data.stats.total_count > 0 && page > 1) {
+                window.location.href = `/search?q=${encodeURIComponent(query)}&page=1` +
+                                      `&max_results=${maxResults}` +
+                                      (regex ? '&regex=true' : '') +
+                                      (substring ? '&substring=true' : '');
+            }
+        }
+    })
+    .catch(error => {
+        console.error('Error checking for more results:', error);
+    });
+}
+
+// Initialize progressive loading if needed
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if we're on a search results page
+    const searchParams = new URLSearchParams(window.location.search);
+    const query = searchParams.get('q');
+    
+    if (query) {
+        // Remove any top pagination and ensure only bottom pagination exists
+        ensureBottomPaginationContainer();
+        
+        // Remove the redundant results-count element at the bottom if it exists
+        const resultsCountElement = document.getElementById('results-count');
+        if (resultsCountElement && resultsCountElement.parentNode) {
+            resultsCountElement.parentNode.remove();
+        }
+        
+        // Remove any existing duration span to start fresh
+        const statsElement = document.querySelector('.stats');
+        if (statsElement) {
+            const durationSpan = statsElement.querySelector('.duration');
+            if (durationSpan) {
+                durationSpan.remove();
+            }
+        }
+        
+        // Check if progressive loading is enabled
+        const progressive = searchParams.has('progressive');
+        if (progressive) {
+            console.log("Starting progressive search checks");
+            // Start checking for more results
+            checkForMoreResults();
+        }
+    }
+    
+    // Add progressive parameter to search form
+    const searchForm = document.querySelector('.search-form');
+    if (searchForm && !searchForm.querySelector('input[name="progressive"]')) {
+        console.log("Adding progressive parameter to search form");
+        const progressiveInput = document.createElement('input');
+        progressiveInput.type = 'hidden';
+        progressiveInput.name = 'progressive';
+        progressiveInput.value = 'true';
+        searchForm.appendChild(progressiveInput);
+    }
 }); 

@@ -25,7 +25,7 @@
             <span class="checkbox-label">Use regex pattern</span>
         </label>
         <div class="input-container">
-            <label for="max-results">Max results:</label>
+            <label for="max-results">Results per page:</label>
             <input type="number" name="max_results" id="max-results" value="{{ max_results }}" min="1" max="1000">
         </div>
     </div>
@@ -33,14 +33,64 @@
 </form>
 
 <div class="stats">
-    Found {{ results|length }} results in {{ available_files|length }} files
+    {% if pagination.total_results > 0 %}
+        Showing {{ (pagination.page - 1) * pagination.per_page + 1 }} to 
+        {{ [pagination.page * pagination.per_page, pagination.total_results] | min }} 
+        of {{ pagination.total_results }} results
+    {% else %}
+        No results found
+    {% endif %}
     {% if search_duration %}
     <span class="duration">(search took {{ search_duration|round(2) }}ms)</span>
     {% endif %}
-    {% if limit_reached %}
-    <span class="limit-warning">Maximum result limit ({{ max_results }}) reached. Try a more specific search.</span>
-    {% endif %}
 </div>
+
+{% if pagination.total_pages > 1 %}
+<div class="pagination">
+    <div class="pagination-info">
+        Page {{ pagination.page }} of {{ pagination.total_pages }}
+    </div>
+    <div class="pagination-controls">
+        {% if pagination.has_prev %}
+            <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=pagination.page-1) }}" class="pagination-btn">← Previous</a>
+        {% else %}
+            <span class="pagination-btn disabled">← Previous</span>
+        {% endif %}
+        
+        {% set start_page = [1, pagination.page - 2] | max %}
+        {% set end_page = [pagination.total_pages, start_page + 4] | min %}
+        {% set start_page = [1, end_page - 4] | max %}
+        
+        {% if start_page > 1 %}
+            <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=1) }}" class="pagination-btn">1</a>
+            {% if start_page > 2 %}
+                <span class="pagination-ellipsis">...</span>
+            {% endif %}
+        {% endif %}
+        
+        {% for p in range(start_page, end_page + 1) %}
+            {% if p == pagination.page %}
+                <span class="pagination-btn active">{{ p }}</span>
+            {% else %}
+                <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=p) }}" class="pagination-btn">{{ p }}</a>
+            {% endif %}
+        {% endfor %}
+        
+        {% if end_page < pagination.total_pages %}
+            {% if end_page < pagination.total_pages - 1 %}
+                <span class="pagination-ellipsis">...</span>
+            {% endif %}
+            <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=pagination.total_pages) }}" class="pagination-btn">{{ pagination.total_pages }}</a>
+        {% endif %}
+        
+        {% if pagination.has_next %}
+            <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=pagination.page+1) }}" class="pagination-btn">Next →</a>
+        {% else %}
+            <span class="pagination-btn disabled">Next →</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 
 {% if results %}
 <div class="export-controls">
@@ -87,9 +137,68 @@
     </div>
     {% endfor %}
 </div>
+
+{% if pagination.total_pages > 1 %}
+<div class="pagination bottom-pagination">
+    <div class="pagination-info">
+        Page {{ pagination.page }} of {{ pagination.total_pages }}
+    </div>
+    <div class="pagination-controls">
+        {% if pagination.has_prev %}
+            <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=pagination.page-1) }}" class="pagination-btn">← Previous</a>
+        {% else %}
+            <span class="pagination-btn disabled">← Previous</span>
+        {% endif %}
+        
+        {% set start_page = [1, pagination.page - 2] | max %}
+        {% set end_page = [pagination.total_pages, start_page + 4] | min %}
+        {% set start_page = [1, end_page - 4] | max %}
+        
+        {% if start_page > 1 %}
+            <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=1) }}" class="pagination-btn">1</a>
+            {% if start_page > 2 %}
+                <span class="pagination-ellipsis">...</span>
+            {% endif %}
+        {% endif %}
+        
+        {% for p in range(start_page, end_page + 1) %}
+            {% if p == pagination.page %}
+                <span class="pagination-btn active">{{ p }}</span>
+            {% else %}
+                <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=p) }}" class="pagination-btn">{{ p }}</a>
+            {% endif %}
+        {% endfor %}
+        
+        {% if end_page < pagination.total_pages %}
+            {% if end_page < pagination.total_pages - 1 %}
+                <span class="pagination-ellipsis">...</span>
+            {% endif %}
+            <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=pagination.total_pages) }}" class="pagination-btn">{{ pagination.total_pages }}</a>
+        {% endif %}
+        
+        {% if pagination.has_next %}
+            <a href="{{ url_for('main.search', q=query, regex=regex, substring=substring, max_results=max_results, page=pagination.page+1) }}" class="pagination-btn">Next →</a>
+        {% else %}
+            <span class="pagination-btn disabled">Next →</span>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+
 {% else %}
 <p class="no-results">No results found</p>
 {% endif %}
+
+<div class="search-stats">
+    <p id="results-count">
+        {% if pagination.still_searching %}
+            {{ pagination.total_results }} results found so far (still searching...)
+        {% else %}
+            {{ pagination.total_results }} results found
+        {% endif %}
+    </p>
+    <p>Search completed in {{ "%.2f"|format(search_duration) }}ms</p>
+</div>
 {% endblock %}
 
 {% block scripts %}
