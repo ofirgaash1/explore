@@ -5,10 +5,12 @@ import time
 import logging
 import sys
 import argparse
+import os
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Run the ivrit.ai Explore application')
 parser.add_argument('--force-reindex', action='store_true', help='Force rebuilding of search indices')
+parser.add_argument('--data-dir', type=str, help='Path to the data directory', default='data')
 args = parser.parse_args()
 
 # Configure logging
@@ -33,9 +35,13 @@ def log_timing(func):
     return wrapper
 
 @log_timing
-def initialize_app():
-    """Initialize the Flask application"""
-    return create_app()
+def initialize_app(data_dir):
+    """Initialize the Flask application with custom data directory"""
+    app = create_app()
+    # Set the data directory in the app config
+    app.config['DATA_DIR'] = os.path.abspath(data_dir)
+    logger.info(f"Using data directory: {app.config['DATA_DIR']}")
+    return app
 
 @log_timing
 def initialize_file_service(app):
@@ -60,10 +66,12 @@ logger.info("=" * 50)
 if args.force_reindex:
     logger.info("Force reindex flag is set - will rebuild search indices")
 
+logger.info(f"Using data directory: {args.data_dir}")
+
 start_total = time.time()
 
-# Initialize app
-app = initialize_app()
+# Initialize app with custom data directory
+app = initialize_app(args.data_dir)
 
 # Initialize services within app context
 with app.app_context():
@@ -101,4 +109,4 @@ logger.info("=" * 50)
 
 if __name__ == '__main__':
     logger.info("Starting web server...")
-    app.run(debug=True, port=5000, host='0.0.0.0') 
+    app.run(debug=True, port=80, host='0.0.0.0') 
