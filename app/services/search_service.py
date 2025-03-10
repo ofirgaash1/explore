@@ -43,29 +43,28 @@ class SearchService:
                 self.full_texts[source] = data["text"]
                 logger.info(f"Using pre-existing full text for {source}")
                 
-                # Also load segments if available
-                if "segments" in data and isinstance(data["segments"], list):
-                    segments = data["segments"]
-                    self.all_segments[source] = segments
-                    segment_count = len(segments)
-                else:
-                    # Create a single segment from the full text
+                # Process segments if available using the new optimized function
+                segment_count = self.process_segments_data(source, data)
+                
+                # If no segments were found, create a single segment from the full text
+                if segment_count == 0:
                     self.all_segments[source] = [{
                         "start": 0,
+                        "end": 0,
                         "text": data["text"]
                     }]
                     segment_count = 1
             else:
                 # Handle the case where the JSON is an array of segments
                 if isinstance(data, list):
-                    segments = data
-                    self.all_segments[source] = segments
+                    # Create a data structure compatible with process_segments_data
+                    wrapped_data = {"segments": data}
+                    segment_count = self.process_segments_data(source, wrapped_data)
                     
                     # Create full text by concatenating all segments
-                    full_text = " ".join([segment.get('text', '') for segment in segments])
-                    self.full_texts[source] = full_text
-                    
-                    segment_count = len(segments)
+                    if source in self.all_segments:
+                        full_text = " ".join([segment.get('text', '') for segment in self.all_segments[source]])
+                        self.full_texts[source] = full_text
                 else:
                     logger.warning(f"Unexpected JSON format in {source}, skipping")
                     continue
@@ -567,3 +566,37 @@ class SearchService:
         if data and 'segments' in data:
             return data['segments']
         return []
+
+    # Function to process segments data
+    def process_segments_data(self, source, data):
+        """Process segments data from a JSON file and store only essential fields"""
+        if "segments" in data and isinstance(data["segments"], list):
+            # Extract only the essential fields (start, end, text) from each segment
+            optimized_segments = [
+                {
+                    "start": segment.get("start", 0),
+                    "end": segment.get("end", 0),
+                    "text": segment.get("text", "")
+                }
+                for segment in data["segments"]
+            ]
+            
+            self.all_segments[source] = optimized_segments
+            segment_count = len(optimized_segments)
+            
+            # Process each segment for indexing
+            for i, segment in enumerate(optimized_segments):
+                text = segment.get("text", "")
+                if not text:
+                    continue
+                    
+                # Add to the search index
+                self.add_to_index(text, source, segment["start"])
+                
+                # Update progress periodically
+                if i % 100 == 0 and i > 0:
+                    self.logger.info(f"Processed {i}/{segment_count} segments for {source}")
+                    
+            self.logger.info(f"Indexed {segment_count} segments for {source}")
+            return segment_count
+        return 0
