@@ -11,6 +11,11 @@ import os
 parser = argparse.ArgumentParser(description='Run the ivrit.ai Explore application')
 parser.add_argument('--force-reindex', action='store_true', help='Force rebuilding of search indices')
 parser.add_argument('--data-dir', type=str, help='Path to the data directory', default='data')
+parser.add_argument('--ssl-cert', type=str, help='Path to SSL certificate file', 
+                    default='/etc/letsencrypt/live/explore.ivrit.ai/fullchain.pem')
+parser.add_argument('--ssl-key', type=str, help='Path to SSL key file', 
+                    default='/etc/letsencrypt/live/explore.ivrit.ai/privkey.pem')
+parser.add_argument('--port', type=int, help='Port to run the server on', default=443)
 args = parser.parse_args()
 
 # Configure logging
@@ -67,6 +72,8 @@ if args.force_reindex:
     logger.info("Force reindex flag is set - will rebuild search indices")
 
 logger.info(f"Using data directory: {args.data_dir}")
+logger.info(f"Using SSL certificate: {args.ssl_cert}")
+logger.info(f"Using SSL key: {args.ssl_key}")
 
 start_total = time.time()
 
@@ -108,5 +115,22 @@ logger.info("Search index is ready. Queries should be much faster now.")
 logger.info("=" * 50)
 
 if __name__ == '__main__':
-    logger.info("Starting web server...")
-    app.run(debug=True, port=80, host='0.0.0.0') 
+    logger.info("Starting web server with SSL...")
+    
+    # Check if SSL certificate and key files exist
+    if not os.path.exists(args.ssl_cert):
+        logger.error(f"SSL certificate file not found: {args.ssl_cert}")
+        sys.exit(1)
+    
+    if not os.path.exists(args.ssl_key):
+        logger.error(f"SSL key file not found: {args.ssl_key}")
+        sys.exit(1)
+    
+    # Run the app with SSL
+    ssl_context = (args.ssl_cert, args.ssl_key)
+    app.run(
+        debug=False, 
+        port=args.port, 
+        host='0.0.0.0',
+        ssl_context=ssl_context
+    ) 
