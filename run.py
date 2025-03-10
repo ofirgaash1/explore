@@ -16,6 +16,9 @@ parser.add_argument('--ssl-cert', type=str, help='Path to SSL certificate file',
 parser.add_argument('--ssl-key', type=str, help='Path to SSL key file', 
                     default='/etc/letsencrypt/live/explore.ivrit.ai/privkey.pem')
 parser.add_argument('--port', type=int, help='Port to run the server on', default=443)
+parser.add_argument('--dev', action='store_true', help='Run in development mode (no SSL, port 5000)')
+parser.add_argument('--show-segments', type=int, metavar='N', 
+                    help='Show the first N segments from each file after indexing', default=0)
 args = parser.parse_args()
 
 # Configure logging
@@ -61,6 +64,9 @@ def initialize_search_index(file_service, force_rebuild=False):
     """Build the search index"""
     search_service = SearchService(file_service)
     search_service.build_search_index(force_rebuild=force_rebuild)
+    if args.show_segments > 0:
+        logger.info(f"Displaying top {args.show_segments} segments from each file...")
+        search_service.display_top_segments(limit=args.show_segments)
     return search_service
 
 # Main execution
@@ -72,8 +78,15 @@ if args.force_reindex:
     logger.info("Force reindex flag is set - will rebuild search indices")
 
 logger.info(f"Using data directory: {args.data_dir}")
-logger.info(f"Using SSL certificate: {args.ssl_cert}")
-logger.info(f"Using SSL key: {args.ssl_key}")
+
+# Override port and SSL settings if in dev mode
+if args.dev:
+    args.port = 5000
+    logger.info(f"Running in DEVELOPMENT mode on port {args.port} without SSL")
+else:
+    logger.info(f"Running in PRODUCTION mode on port {args.port} with SSL")
+    logger.info(f"Using SSL certificate: {args.ssl_cert}")
+    logger.info(f"Using SSL key: {args.ssl_key}")
 
 start_total = time.time()
 
@@ -115,22 +128,32 @@ logger.info("Search index is ready. Queries should be much faster now.")
 logger.info("=" * 50)
 
 if __name__ == '__main__':
-    logger.info("Starting web server with SSL...")
+    logger.info(f"Starting web server on port {args.port}...")
     
-    # Check if SSL certificate and key files exist
-    if not os.path.exists(args.ssl_cert):
-        logger.error(f"SSL certificate file not found: {args.ssl_cert}")
-        sys.exit(1)
-    
-    if not os.path.exists(args.ssl_key):
-        logger.error(f"SSL key file not found: {args.ssl_key}")
-        sys.exit(1)
-    
-    # Run the app with SSL
-    ssl_context = (args.ssl_cert, args.ssl_key)
-    app.run(
-        debug=False, 
-        port=args.port, 
-        host='0.0.0.0',
-        ssl_context=ssl_context
-    ) 
+    # Run with or without SSL based on dev mode
+    if args.dev:
+        # Development mode - no SSL
+        app.run(
+            debug=True,  # Enable debug mode for development
+            port=args.port,
+            host='0.0.0.0'
+        )
+    else:
+        # Production mode - with SSL
+        # Check if SSL certificate and key files exist
+        if not os.path.exists(args.ssl_cert):
+            logger.error(f"SSL certificate file not found: {args.ssl_cert}")
+            sys.exit(1)
+        
+        if not os.path.exists(args.ssl_key):
+            logger.error(f"SSL key file not found: {args.ssl_key}")
+            sys.exit(1)
+        
+        # Run the app with SSL
+        ssl_context = (args.ssl_cert, args.ssl_key)
+        app.run(
+            debug=False,
+            port=args.port,
+            host='0.0.0.0',
+            ssl_context=ssl_context
+        ) 

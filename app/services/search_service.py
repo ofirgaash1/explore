@@ -4,6 +4,7 @@ import logging
 import time
 import os
 import json
+from tqdm import tqdm
 
 logger = logging.getLogger(__name__)
 
@@ -27,51 +28,55 @@ class SearchService:
         available_files = self.file_service.get_available_files()
         total_segments = 0
         
-        # Load all segments from all files
-        for source, file_info in available_files.items():
-            file_start = time.time()
-            logger.info(f"Loading segments from: {source}")
-            
-            # Load the JSON file
-            json_path = file_info['json_path']
-            with open(json_path, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-            
-            # Check if the JSON has a top-level "text" field for full text
-            if isinstance(data, dict) and "text" in data:
-                # Use the pre-existing full text
-                self.full_texts[source] = data["text"]
-                logger.info(f"Using pre-existing full text for {source}")
+        # Create a progress bar for all files
+        with tqdm(total=len(available_files), desc="Indexing files", unit="file") as pbar:
+            # Load all segments from all files
+            for source, file_info in available_files.items():
+                file_start = time.time()
                 
-                # Process segments if available using the new optimized function
-                segment_count = self.process_segments_data(source, data)
+                # Load the JSON file
+                json_path = file_info['json_path']
+                with open(json_path, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
                 
-                # If no segments were found, create a single segment from the full text
-                if segment_count == 0:
-                    self.all_segments[source] = [{
-                        "start": 0,
-                        "end": 0,
-                        "text": data["text"]
-                    }]
-                    segment_count = 1
-            else:
-                # Handle the case where the JSON is an array of segments
-                if isinstance(data, list):
-                    # Create a data structure compatible with process_segments_data
-                    wrapped_data = {"segments": data}
-                    segment_count = self.process_segments_data(source, wrapped_data)
+                # Check if the JSON has a top-level "text" field for full text
+                if isinstance(data, dict) and "text" in data:
+                    # Use the pre-existing full text
+                    self.full_texts[source] = data["text"]
                     
-                    # Create full text by concatenating all segments
-                    if source in self.all_segments:
-                        full_text = " ".join([segment.get('text', '') for segment in self.all_segments[source]])
-                        self.full_texts[source] = full_text
+                    # Process segments if available using the optimized function
+                    segment_count = self.process_segments_data(source, data, show_progress=False)
+                    
+                    # If no segments were found, create a single segment from the full text
+                    if segment_count == 0:
+                        self.all_segments[source] = [{
+                            "start": 0,
+                            "end": 0,
+                            "text": data["text"]
+                        }]
+                        segment_count = 1
                 else:
-                    logger.warning(f"Unexpected JSON format in {source}, skipping")
-                    continue
-            
-            total_segments += segment_count
-            file_time = time.time() - file_start
-            logger.info(f"Loaded {segment_count} segments from {source} in {file_time:.2f} seconds")
+                    # Handle the case where the JSON is an array of segments
+                    if isinstance(data, list):
+                        # Create a data structure compatible with process_segments_data
+                        wrapped_data = {"segments": data}
+                        segment_count = self.process_segments_data(source, wrapped_data, show_progress=False)
+                        
+                        # Create full text by concatenating all segments
+                        if source in self.all_segments:
+                            full_text = " ".join([segment.get('text', '') for segment in self.all_segments[source]])
+                            self.full_texts[source] = full_text
+                    else:
+                        logger.warning(f"Unexpected JSON format in {source}, skipping")
+                        pbar.update(1)
+                        continue
+                
+                total_segments += segment_count
+                file_time = time.time() - file_start
+                
+                # Update the progress bar with file info
+                pbar.set_postfix(segments=segment_count, time=f"{file_time:.2f}s")
+                pbar.update(1)
         
         self.index_built = True
         total_time = time.time() - start_time
@@ -568,7 +573,7 @@ class SearchService:
         return []
 
     # Function to process segments data
-    def process_segments_data(self, source, data):
+    def process_segments_data(self, source, data, show_progress=False):
         """Process segments data from a JSON file and store only essential fields"""
         if "segments" in data and isinstance(data["segments"], list):
             # Extract only the essential fields (start, end, text) from each segment
@@ -584,19 +589,51 @@ class SearchService:
             self.all_segments[source] = optimized_segments
             segment_count = len(optimized_segments)
             
-            # Process each segment for indexing
-            for i, segment in enumerate(optimized_segments):
-                text = segment.get("text", "")
-                if not text:
-                    continue
-                    
-                # Add to the search index
-                self.add_to_index(text, source, segment["start"])
-                
-                # Update progress periodically
-                if i % 100 == 0 and i > 0:
-                    self.logger.info(f"Processed {i}/{segment_count} segments for {source}")
-                    
-            self.logger.info(f"Indexed {segment_count} segments for {source}")
+            # Only show detailed progress if requested
+            if show_progress and segment_count > 100:
+                with tqdm(total=segment_count, desc=f"Processing {source}", unit="segment") as segment_pbar:
+                    for i, segment in enumerate(optimized_segments):
+                        text = segment.get("text", "")
+                        if not text:
+                            continue
+                        
+                        # Update progress bar
+                        if i % 10 == 0:
+                            segment_pbar.update(10)
+            
             return segment_count
         return 0
+
+    def display_top_segments(self, source=None, limit=10):
+        """Display the top segments for debugging purposes
+        
+        Args:
+            source: Specific source to show segments from, or None for all sources
+            limit: Maximum number of segments to show per source
+        """
+        if not self.index_built:
+            logger.warning("Search index not built yet, nothing to display")
+            return
+        
+        sources_to_display = [source] if source else list(self.all_segments.keys())
+        
+        for src in sources_to_display:
+            if src not in self.all_segments:
+                logger.warning(f"Source '{src}' not found in index")
+                continue
+            
+            segments = self.all_segments[src]
+            logger.info(f"\n{'='*40}\nTop {min(limit, len(segments))} segments for {src}:")
+            
+            for i, segment in enumerate(segments[:limit]):
+                start_time = segment.get('start', 0)
+                end_time = segment.get('end', 0)
+                text = segment.get('text', '')
+                
+                # Format time as MM:SS
+                start_formatted = f"{int(start_time//60):02d}:{int(start_time%60):02d}"
+                end_formatted = f"{int(end_time//60):02d}:{int(end_time%60):02d}"
+                
+                logger.info(f"{i+1}. [{start_formatted}-{end_formatted}] {text[:100]}{'...' if len(text) > 100 else ''}")
+            
+            logger.info(f"{'='*40}\n")
