@@ -47,32 +47,33 @@ function loadAudio(placeholder) {
     // Add 15-second back button
     const back15Btn = document.createElement('button');
     back15Btn.className = 'audio-btn';
-    back15Btn.textContent = '⏪ -15s';
+    back15Btn.textContent = '⏪ -15ש';
     back15Btn.onclick = function() { skipAudio(audio, -15); };
     
     // Add 5-second back button
     const back5Btn = document.createElement('button');
     back5Btn.className = 'audio-btn';
-    back5Btn.textContent = '◀ -5s';
+    back5Btn.textContent = '◀ -5ש';
     back5Btn.onclick = function() { skipAudio(audio, -5); };
     
     // Add 5-second forward button
     const forward5Btn = document.createElement('button');
     forward5Btn.className = 'audio-btn';
-    forward5Btn.textContent = '+5s ▶';
+    forward5Btn.textContent = '+5ש ▶';
     forward5Btn.onclick = function() { skipAudio(audio, 5); };
     
     // Add 15-second forward button
     const forward15Btn = document.createElement('button');
     forward15Btn.className = 'audio-btn';
-    forward15Btn.textContent = '+15s ⏩';
+    forward15Btn.textContent = '+15ש ⏩';
     forward15Btn.onclick = function() { skipAudio(audio, 15); };
     
     // Add buttons to controls in order
-    audioControls.appendChild(back15Btn);
-    audioControls.appendChild(back5Btn);
-    audioControls.appendChild(forward5Btn);
     audioControls.appendChild(forward15Btn);
+    audioControls.appendChild(forward5Btn);
+    audioControls.appendChild(back5Btn);
+    audioControls.appendChild(back15Btn);
+
     
     audioContainer.appendChild(audioControls);
     
@@ -187,9 +188,9 @@ function addContextToResult(resultItem) {
     const scrollerControls = document.createElement('div');
     scrollerControls.className = 'context-scroller';
     scrollerControls.innerHTML = `
-        <button class="scroller-btn" data-direction="up" title="Scroll up to earlier segments">▲ Earlier</button>
-        <span class="scroller-position">Segment ${currentIndex + 1} of ${segments.length}</span>
-        <button class="scroller-btn" data-direction="down" title="Scroll down to later segments">Later ▼</button>
+       <button class="scroller-btn" data-direction="up" title="לקטעים מוקדמים יותר">▲ הקודם</button>
+        <span class="scroller-position">קטע ${currentIndex + 1} מתוך ${segments.length}</span>
+       <button class="scroller-btn" data-direction="down" title="לקטעים בהמשך">הבא ▼</button>
     `;
     
     // Add event listeners to scroller buttons
@@ -226,7 +227,7 @@ function addContextToResult(resultItem) {
         
         if (existingScroller) {
             existingScroller.querySelector('.scroller-position').textContent = 
-                `Segment ${currentIndex + 1} of ${segments.length}`;
+                `קטע ${currentIndex + 1} מתוך ${segments.length}`;
         } else {
             textContainer.insertBefore(scrollerControls, textContainer.firstChild);
         }
@@ -405,7 +406,7 @@ function updatePagination(pagination) {
     // Create pagination info div
     const paginationInfo = document.createElement('div');
     paginationInfo.className = 'pagination-info';
-    paginationInfo.textContent = `Page ${pagination.page} of ${pagination.total_pages}`;
+    paginationInfo.textContent = `עמוד ${pagination.page} מתוך ${pagination.total_pages}`;
     
     // Create pagination controls div
     const paginationControls = document.createElement('div');
@@ -419,12 +420,12 @@ function updatePagination(pagination) {
                          (regex ? '&regex=true' : '') +
                          (substring ? '&substring=true' : '');
         prevButton.className = 'pagination-btn';
-        prevButton.textContent = '← Previous';
+        prevButton.textContent = '← הקודם';
         paginationControls.appendChild(prevButton);
     } else {
         const prevButton = document.createElement('span');
         prevButton.className = 'pagination-btn disabled';
-        prevButton.textContent = '← Previous';
+        prevButton.textContent = '← הקודם';
         paginationControls.appendChild(prevButton);
     }
     
@@ -494,12 +495,12 @@ function updatePagination(pagination) {
                          (regex ? '&regex=true' : '') +
                          (substring ? '&substring=true' : '');
         nextButton.className = 'pagination-btn';
-        nextButton.textContent = 'Next →';
+        nextButton.textContent = 'הבא →';
         paginationControls.appendChild(nextButton);
     } else {
         const nextButton = document.createElement('span');
         nextButton.className = 'pagination-btn disabled';
-        nextButton.textContent = 'Next →';
+        nextButton.textContent = 'הבא →';
         paginationControls.appendChild(nextButton);
     }
     
@@ -551,7 +552,7 @@ function updateResultsCount(pagination) {
             const end = Math.min(pagination.page * pagination.per_page, pagination.total_results);
             
             if (pagination.still_searching) {
-                statsText = `Showing ${start} to ${end} of ${pagination.total_results} results found so far (still searching...)`;
+                statsText = `מציג ${start} עד ${end} מתוך ${pagination.total_results} תוצאות שנמצאו עד כה (עדיין מחפש...)`;
                 
                 // Always remove duration span if still searching
                 const durationSpan = statsElement.querySelector('.duration');
@@ -559,10 +560,10 @@ function updateResultsCount(pagination) {
                     durationSpan.remove();
                 }
             } else {
-                statsText = `Showing ${start} to ${end} of ${pagination.total_results} results`;
+                statsText = `מציג ${start} עד ${end} מתוך ${pagination.total_results} תוצאות`;
             }
         } else {
-            statsText = 'No results found';
+            statsText = 'לא נמצאו תוצאות';
         }
         
         // Update the stats text without the duration span
@@ -638,7 +639,7 @@ function checkForMoreResults() {
                 // Create a new duration span with the final time
                 let durationSpan = document.createElement('span');
                 durationSpan.className = 'duration';
-                durationSpan.textContent = ` (search took ${totalDuration.toFixed(2)}ms)`;
+                durationSpan.textContent = ` (החיפוש ארך ${totalDuration.toFixed(2)} מילישניות)`;
                 statsElement.appendChild(durationSpan);
             }
             

@@ -7,33 +7,33 @@
     <h1>ivrit.ai Explore</h1>
     
     <div class="project-info">
-        <h2>About ivrit.ai</h2>
-        <p>ivrit.ai is a non-profit effort aiming to make Hebrew a first-class citizen for AI technologies, by providing favorably-licensed datasets.</p>
-        <p>This Explore website allows you to search through the audio transcripts in the dataset.</p>
-        <p>All data is licensed under the <a href="https://www.ivrit.ai/en/the-license/" target="_blank">ivrit.ai license</a> and is also available in the <a href="https://huggingface.co/ivrit-ai" target="_blank">Huggingface repository</a>.</p>
-        <p>For support, help, ideas and contributions, please contact us at <a href="mailto:info@ivrit.ai">info@ivrit.ai</a></p>
+        <h2>אודות ivrit.ai</h2>
+        <p>ivrit.ai הוא פרוייקט ללא מטרות רווח. מטרתנו היא להקל על תמיכה איכותית בעברית בכלי בינה מלאכותית, ובעיקר ביכולות תמלול, על ידי הנגשת מאגרי מידע איכותיים בעברית ברשיון נוח לשימוש.</p>
+        <p>ממשק זה מאפשר חיפוש ועיון במאגרי המידע שנאספו במסגרת המיזם.</p>
+        <p>כל הנתונים מורשים תחת <a href="https://www.ivrit.ai/en/the-license/" target="_blank">רישיון ivrit.ai</a> וזמינים גם ב<a href="https://huggingface.co/ivrit-ai" target="_blank">מאגר Huggingface</a>.</p>
+        <p>לתמיכה, עזרה, רעיונות ותרומות, אנא צרו קשר בכתובת <a href="mailto:info@ivrit.ai">info@ivrit.ai</a></p>
     </div>
     
     <form action="{{ url_for('main.search') }}" method="GET" class="search-form">
-        <input type="text" name="q" placeholder="Enter search term..." autofocus>
+        <input type="text" name="q" placeholder="הזן מונח לחיפוש..." autofocus>
         <div class="search-options">
             <label class="checkbox-container">
                 <input type="checkbox" name="substring" id="substring-checkbox">
-                <span class="checkbox-label">Include partial word matches</span>
-                <span class="checkbox-tooltip">When unchecked, only matches complete words</span>
+                <span class="checkbox-label">כלול התאמות חלקיות של מילים</span>
+                <span class="checkbox-tooltip">כשלא מסומן, יתאים רק מילים שלמות</span>
             </label>
             <label class="checkbox-container">
                 <input type="checkbox" name="regex" id="regex-checkbox">
-                <span class="checkbox-label">Use regex pattern</span>
-                <span class="checkbox-tooltip">Enable regular expression search</span>
+                <span class="checkbox-label">השתמש בתבנית regex</span>
+                <span class="checkbox-tooltip">אפשר חיפוש ביטויים רגולריים</span>
             </label>
             <div class="input-container">
-                <label for="max-results">Max results:</label>
+                <label for="max-results">מקסימום תוצאות:</label>
                 <input type="number" name="max_results" id="max-results" value="100" min="1" max="1000">
-                <span class="checkbox-tooltip">Limit the number of search results</span>
+                <span class="checkbox-tooltip">הגבל את מספר תוצאות החיפוש</span>
             </div>
         </div>
-        <button type="submit">Search</button>
+        <button type="submit">חיפוש</button>
     </form>
 </div>
 {% endblock %} 
