@@ -5,8 +5,25 @@ import time
 import os
 import json
 from tqdm import tqdm
+from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+@dataclass
+class Segment:
+    """Class representing a text segment with start and end positions"""
+    start: float = 0
+    end: float = 0
+    text: str = ""
+    
+    @classmethod
+    def from_dict(cls, segment_dict):
+        """Create a Segment object from a dictionary"""
+        return cls(
+            start=segment_dict.get("start", 0),
+            end=segment_dict.get("end", 0),
+            text=segment_dict.get("text", "")
+        )
 
 class SearchService:
     def __init__(self, file_service):
@@ -16,7 +33,7 @@ class SearchService:
         self.index_built = False
         self.last_search_results = {}  # Store complete results of last search for pagination
     
-    def build_search_index(self, force_rebuild=False):
+    def build_search_index(self, force_rebuild=False, debug=False):
         """Load all segments into memory for fast searching, and use full texts if available"""
         if self.index_built and not force_rebuild:
             logger.info("Search index already built, skipping")
@@ -27,6 +44,11 @@ class SearchService:
         
         available_files = self.file_service.get_available_files()
         total_segments = 0
+        
+        # Debug mode: limit to first 3 files
+        if debug:
+            logger.info("DEBUG MODE: Processing only first 3 files")
+            available_files = dict(list(available_files.items())[:3])
         
         # Create a progress bar for all files
         with tqdm(total=len(available_files), desc="Indexing files", unit="file") as pbar:
@@ -49,11 +71,7 @@ class SearchService:
                     
                     # If no segments were found, create a single segment from the full text
                     if segment_count == 0:
-                        self.all_segments[source] = [{
-                            "start": 0,
-                            "end": 0,
-                            "text": data["text"]
-                        }]
+                        self.all_segments[source] = [Segment(0, 0, data["text"])]
                         segment_count = 1
                 else:
                     # Handle the case where the JSON is an array of segments
@@ -64,7 +82,7 @@ class SearchService:
                         
                         # Create full text by concatenating all segments
                         if source in self.all_segments:
-                            full_text = " ".join([segment.get('text', '') for segment in self.all_segments[source]])
+                            full_text = " ".join([segment.text for segment in self.all_segments[source]])
                             self.full_texts[source] = full_text
                     else:
                         logger.warning(f"Unexpected JSON format in {source}, skipping")
@@ -82,6 +100,38 @@ class SearchService:
         total_time = time.time() - start_time
         logger.info(f"Two-phase search index built in {total_time:.2f} seconds")
         logger.info(f"Total segments loaded: {total_segments}")
+        
+        # Print debug information about the index structure if in debug mode
+        if debug:
+            self._print_debug_index_info()
+    
+    def _print_debug_index_info(self):
+        """Print debug information about the index structure"""
+        logger.info("\n===== DEBUG: INDEX STRUCTURE =====")
+        
+        # Print information about full texts
+        logger.info(f"Full texts dictionary contains {len(self.full_texts)} sources")
+        for i, (source, text) in enumerate(list(self.full_texts.items())[:2]):
+            logger.info(f"  Source: {source}")
+            logger.info(f"  Full text sample: {text[:100]}...")
+            logger.info("  ---")
+        
+        # Print information about segments
+        logger.info(f"Segments dictionary contains {len(self.all_segments)} sources")
+        for i, (source, segments) in enumerate(list(self.all_segments.items())[:2]):
+            logger.info(f"  Source: {source}")
+            logger.info(f"  Number of segments: {len(segments)}")
+            
+            # Print a few sample segments
+            for j, segment in enumerate(segments[:3]):
+                logger.info(f"    Segment {j+1}:")
+                logger.info(f"      start: {segment.start}")
+                logger.info(f"      end: {segment.end}")
+                logger.info(f"      text sample: {segment.text[:50]}...")
+            
+            logger.info("  ---")
+        
+        logger.info("===== END DEBUG INFO =====\n")
     
     def search(self, query, use_regex=False, use_substring=False, max_results=100, page=1, progressive=False):
         """
@@ -342,14 +392,11 @@ class SearchService:
                 if max_results is not None and len(results) >= max_results:
                     logger.info(f"Reached max results ({max_results}), stopping search")
                     break
-                    
-                if 'text' not in segment:
-                    continue
                 
-                if query_lower in segment['text'].lower():
+                if query_lower in segment.text.lower():
                     results.append({
-                        'start': segment['start'],
-                        'text': segment['text'],
+                        'start': segment.start,
+                        'text': segment.text,
                         'source': source
                     })
                     source_results += 1
@@ -398,14 +445,11 @@ class SearchService:
                     if max_results is not None and len(results) >= max_results:
                         logger.info(f"Reached max results ({max_results}), stopping search")
                         break
-                        
-                    if 'text' not in segment:
-                        continue
                     
-                    if regex.search(segment['text']):
+                    if regex.search(segment.text):
                         results.append({
-                            'start': segment['start'],
-                            'text': segment['text'],
+                            'start': segment.start,
+                            'text': segment.text,
                             'source': source
                         })
                 
@@ -440,14 +484,11 @@ class SearchService:
                     if max_results is not None and len(results) >= max_results:
                         logger.info(f"Reached max results ({max_results}), stopping search")
                         break
-                        
-                    if 'text' not in segment:
-                        continue
                     
-                    if regex.search(segment['text']):
+                    if regex.search(segment.text):
                         results.append({
-                            'start': segment['start'],
-                            'text': segment['text'],
+                            'start': segment.start,
+                            'text': segment.text,
                             'source': source
                         })
                 
@@ -477,15 +518,12 @@ class SearchService:
                 for segment in self.all_segments[source_file]:
                     if len(results) >= max_results:
                         break
-                        
+                    
                     try:
-                        if 'text' not in segment:
-                            continue
-                        
-                        if query_lower in segment['text'].lower():
+                        if query_lower in segment.text.lower():
                             results.append({
-                                'start': segment['start'],
-                                'text': segment['text'],
+                                'start': segment.start,
+                                'text': segment.text,
                                 'source': source_file
                             })
                     except Exception as e:
@@ -499,14 +537,11 @@ class SearchService:
                     for segment in self.all_segments[source_file]:
                         if len(results) >= max_results:
                             break
-                            
-                        if 'text' not in segment:
-                            continue
                         
-                        if regex.search(segment['text']):
+                        if regex.search(segment.text):
                             results.append({
-                                'start': segment['start'],
-                                'text': segment['text'],
+                                'start': segment.start,
+                                'text': segment.text,
                                 'source': source_file
                             })
                 except re.error:
@@ -524,18 +559,17 @@ class SearchService:
         if use_substring:
             # Substring search
             query_lower = query.lower()
-            for segment in segments:
+            for segment_dict in segments:
                 if len(results) >= max_results:
                     break
-                    
+                
                 try:
-                    if 'text' not in segment:
-                        continue
+                    segment = Segment.from_dict(segment_dict)
                     
-                    if query_lower in segment['text'].lower():
+                    if query_lower in segment.text.lower():
                         results.append({
-                            'start': segment['start'],
-                            'text': segment['text'],
+                            'start': segment.start,
+                            'text': segment.text,
                             'source': source_file
                         })
                 except Exception as e:
@@ -546,17 +580,16 @@ class SearchService:
             pattern = r'\b' + re.escape(query) + r'\b'
             try:
                 regex = re.compile(pattern, re.IGNORECASE)
-                for segment in segments:
+                for segment_dict in segments:
                     if len(results) >= max_results:
                         break
-                        
-                    if 'text' not in segment:
-                        continue
                     
-                    if regex.search(segment['text']):
+                    segment = Segment.from_dict(segment_dict)
+                    
+                    if regex.search(segment.text):
                         results.append({
-                            'start': segment['start'],
-                            'text': segment['text'],
+                            'start': segment.start,
+                            'text': segment.text,
                             'source': source_file
                         })
             except re.error:
@@ -577,12 +610,13 @@ class SearchService:
         """Process segments data from a JSON file and store only essential fields"""
         if "segments" in data and isinstance(data["segments"], list):
             # Extract only the essential fields (start, end, text) from each segment
+            # and create Segment objects instead of dictionaries
             optimized_segments = [
-                {
-                    "start": segment.get("start", 0),
-                    "end": segment.get("end", 0),
-                    "text": segment.get("text", "")
-                }
+                Segment(
+                    start=segment.get("start", 0),
+                    end=segment.get("end", 0),
+                    text=segment.get("text", "")
+                )
                 for segment in data["segments"]
             ]
             
@@ -593,8 +627,7 @@ class SearchService:
             if show_progress and segment_count > 100:
                 with tqdm(total=segment_count, desc=f"Processing {source}", unit="segment") as segment_pbar:
                     for i, segment in enumerate(optimized_segments):
-                        text = segment.get("text", "")
-                        if not text:
+                        if not segment.text:
                             continue
                         
                         # Update progress bar
@@ -626,9 +659,9 @@ class SearchService:
             logger.info(f"\n{'='*40}\nTop {min(limit, len(segments))} segments for {src}:")
             
             for i, segment in enumerate(segments[:limit]):
-                start_time = segment.get('start', 0)
-                end_time = segment.get('end', 0)
-                text = segment.get('text', '')
+                start_time = segment.start
+                end_time = segment.end
+                text = segment.text
                 
                 # Format time as MM:SS
                 start_formatted = f"{int(start_time//60):02d}:{int(start_time%60):02d}"
