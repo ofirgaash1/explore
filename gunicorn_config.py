@@ -2,7 +2,7 @@
 # Gunicorn configuration file for ivrit.ai Explore
 
 # Server socket
-bind = '0.0.0.0:9000'  # Change YOUR_PORT to your desired port number
+bind = '0.0.0.0:9000'  # Running on port 9000
 
 # Worker processes
 workers = 4  # Recommended: 2-4 x number of CPU cores
