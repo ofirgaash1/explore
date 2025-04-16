@@ -1,9 +1,50 @@
-from flask import Blueprint, send_file, current_app
+from flask import Blueprint, send_file, current_app, request, Response
 from urllib.parse import unquote
 from ..services.file_service import FileService
 import os
+import mimetypes
+import re
 
 bp = Blueprint('audio', __name__)
+
+def send_range_file(path):
+    range_header = request.headers.get('Range', None)
+    if not os.path.exists(path):
+        return "File not found", 404
+
+    size = os.path.getsize(path)
+    content_type = mimetypes.guess_type(path)[0] or 'application/octet-stream'
+
+    if range_header:
+        # Example Range: bytes=12345-
+        byte1, byte2 = 0, None
+        m = re.search(r'bytes=(\d+)-(\d*)', range_header)
+        if m:
+            byte1 = int(m.group(1))
+            if m.group(2):
+                byte2 = int(m.group(2))
+        if byte2 is None:
+            byte2 = size - 1
+        length = byte2 - byte1 + 1
+
+        with open(path, 'rb') as f:
+            f.seek(byte1)
+            data = f.read(length)
+
+        resp = Response(data, 206, mimetype=content_type)
+        resp.headers.add('Content-Range', f'bytes {byte1}-{byte2}/{size}')
+        resp.headers.add('Accept-Ranges', 'bytes')
+        resp.headers.add('Content-Length', str(length))
+        return resp
+
+    # No Range: return full file
+    with open(path, 'rb') as f:
+        data = f.read()
+
+    resp = Response(data, 200, mimetype=content_type)
+    resp.headers.add('Accept-Ranges', 'bytes')
+    resp.headers.add('Content-Length', str(size))
+    return resp
 
 @bp.route('/audio/<path:filename>')
 def serve_audio(filename):
@@ -19,7 +60,7 @@ def serve_audio(filename):
         if base_name in available_files:
             file_info = available_files[base_name]
             print(f"Found exact match: {file_info['audio_path']}")
-            return send_file(file_info['audio_path'])
+            return send_range_file(file_info['audio_path'])
             
         # If no exact match, try URL-decoded version
         decoded_name = unquote(base_name)
@@ -28,7 +69,7 @@ def serve_audio(filename):
         if decoded_name in available_files:
             file_info = available_files[decoded_name]
             print(f"Found match after decoding: {file_info['audio_path']}")
-            return send_file(file_info['audio_path'])
+            return send_range_file(file_info['audio_path'])
             
         print(f"Available files: {list(available_files.keys())}")
         return f"Audio file not found for {filename}", 404

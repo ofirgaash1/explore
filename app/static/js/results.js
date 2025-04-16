@@ -38,7 +38,7 @@ function loadAudio(placeholder) {
     
     // Set the correct MIME type based on format
     if (format === 'opus') {
-        sourceElement.type = 'audio/ogg; codecs=opus';;  // Correct MIME type for Opus
+        sourceElement.type = 'audio/ogg; codecs=opus';  // Correct MIME type for Opus
     } else if (format === 'ogg') {
         sourceElement.type = 'audio/ogg';
     } else if (format === 'mp3') {
@@ -257,25 +257,20 @@ function playSegmentAudio(resultItem, startTime, source) {
         // If we still have a placeholder, update its data and load the audio
         audioPlaceholder.dataset.start = startTime;
         const audio = loadAudio(audioPlaceholder);
-        audio.currentTime = startTime;
         audio.play();
     } else {
         // If we already have an audio element, update its source
         const audio = resultItem.querySelector('audio');
         const sourceElement = audio.querySelector('source');
         const format = sourceElement.type.split('/')[1];
-        
-        // Update the source URL with the new start time
-        sourceElement.src = `/audio/${encodeURIComponent(source)}.${format}#t=${startTime}`;
-        
-        // Update the data attribute for future reference
-        audio.dataset.currentTime = startTime;
-        
-        // Reload and play the audio
-        audio.load();
-        audio.currentTime = startTime;
+        const newSrc = `/audio/${encodeURIComponent(source)}.${format}#t=${startTime}`;
+
+        if (audio.src !== newSrc) {
+            audio.src = newSrc;
+            audio.load();
+        }
         audio.play();
-    }
+        }
 }
 
 function scrollContext(resultItem, direction) {
