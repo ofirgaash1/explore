@@ -10,7 +10,7 @@ import os
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Run the ivrit.ai Explore application')
 parser.add_argument('--force-reindex', action='store_true', help='Force rebuilding of search indices')
-parser.add_argument('--data-dir', type=str, help='Path to the data directory', default='data')
+parser.add_argument('--data-dir', type=str, help='Path to the data directory', default='../data')
 parser.add_argument('--ssl-cert', type=str, help='Path to SSL certificate file', 
                     default='/etc/letsencrypt/live/explore.ivrit.ai/fullchain.pem')
 parser.add_argument('--ssl-key', type=str, help='Path to SSL key file', 

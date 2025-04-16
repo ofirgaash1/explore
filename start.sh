@@ -1,0 +1,2 @@
+source .venv/bin/activate
+uwsgi --master --https 0.0.0.0:443,/etc/letsencrypt/live/explore.ivrit.ai/fullchain.pem,/etc/letsencrypt/live/explore.ivrit.ai/privkey.pem -w wsgi:app --pyargv "--data-dir /root/data"
