@@ -59,7 +59,7 @@ class FileService:
         return None
     
     def _find_audio_file(self, base_name):
-        for ext in ['.ogg', '.mp3']:
+        for ext in ['.opus']:#, '.mp3']:
             audio_path = self.audio_dir / f"{base_name}{ext}"
             if audio_path.exists():
                 return audio_path

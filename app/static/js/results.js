@@ -35,7 +35,17 @@ function loadAudio(placeholder) {
     
     const sourceElement = document.createElement('source');
     sourceElement.src = `${audioUrl}#t=${start}`;
-    sourceElement.type = `audio/${format}`;
+    
+    // Set the correct MIME type based on format
+    if (format === 'opus') {
+        sourceElement.type = 'audio/ogg; codecs=opus';;  // Correct MIME type for Opus
+    } else if (format === 'ogg') {
+        sourceElement.type = 'audio/ogg';
+    } else if (format === 'mp3') {
+        sourceElement.type = 'audio/mpeg';
+    } else {
+        sourceElement.type = `audio/${format}`;
+    }
     
     audio.appendChild(sourceElement);
     audioContainer.appendChild(audio);

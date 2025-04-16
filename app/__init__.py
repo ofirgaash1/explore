@@ -28,6 +28,8 @@ def create_app():
     )
     app.config['ANALYTICS_SERVICE'] = analytics_service
     
+    app.config['MIME_TYPES'] = {'opus': 'audio/opus'}
+    
     # Register blueprints
     from .routes import main, audio, export
     app.register_blueprint(main.bp)
