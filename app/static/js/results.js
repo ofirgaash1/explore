@@ -1,6 +1,98 @@
 // Store all segments data for each source
 const sourceSegments = {};
 
+// Audio loading queue and management
+const audioQueue = {
+    queue: [],
+    processing: false,
+    concurrentLoads: 3, // Maximum number of concurrent audio element loads
+    activeLoads: 0,
+    
+    // Add an audio placeholder to the queue
+    add: function(placeholder) {
+        // Don't add duplicate entries to the queue
+        const source = placeholder.dataset.source;
+        const start = placeholder.dataset.start;
+        const existingItem = this.queue.find(item => 
+            item.source === source && item.start === start);
+            
+        if (existingItem) return;
+        
+        this.queue.push({
+            placeholder: placeholder,
+            source: source,
+            start: start,
+            priority: this.isInViewport(placeholder) ? 1 : 0 // Prioritize visible elements
+        });
+        
+        // Sort queue by priority (higher priority first)
+        this.queue.sort((a, b) => b.priority - a.priority);
+        
+        // Start processing if not already running
+        if (!this.processing) {
+            this.processQueue();
+        }
+    },
+    
+    // Process the next items in the queue
+    processQueue: function() {
+        if (this.queue.length === 0) {
+            this.processing = false;
+            return;
+        }
+        
+        this.processing = true;
+        
+        // Process items while we have capacity and queue items
+        while (this.activeLoads < this.concurrentLoads && this.queue.length > 0) {
+            const item = this.queue.shift();
+            this.activeLoads++;
+            
+            // Check if the placeholder still exists in DOM and hasn't been replaced
+            if (item.placeholder.isConnected && item.placeholder.classList.contains('audio-placeholder')) {
+                const audio = loadAudio(item.placeholder);
+                
+                // When this audio is loaded, process the next item
+                audio.addEventListener('loadedmetadata', () => {
+                    this.activeLoads--;
+                    // Continue processing queue
+                    setTimeout(() => this.processQueue(), 0);
+                });
+                
+                // Also handle errors to ensure queue continues
+                audio.addEventListener('error', () => {
+                    console.error("Error loading audio:", item.source);
+                    this.activeLoads--;
+                    // Continue processing queue
+                    setTimeout(() => this.processQueue(), 0);
+                });
+            } else {
+                // If placeholder no longer exists, decrement counter and continue
+                this.activeLoads--;
+                setTimeout(() => this.processQueue(), 0);
+            }
+        }
+    },
+    
+    // Check if an element is in the viewport
+    isInViewport: function(element) {
+        const rect = element.getBoundingClientRect();
+        return (
+            rect.top >= 0 &&
+            rect.left >= 0 &&
+            rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
+            rect.right <= (window.innerWidth || document.documentElement.clientWidth)
+        );
+    },
+    
+    // Reset the queue
+    reset: function() {
+        this.queue = [];
+        this.activeLoads = 0;
+        this.processing = false;
+    }
+};
+
 // Initialize segments data from server
 function initializeSourceSegments(source, jsonPath) {
     fetch(jsonPath)
@@ -362,10 +454,23 @@ function toggleSource(sourceId) {
         resultsDiv.style.display = 'block';
         icon.textContent = '▼';
         
-        // Load audio players when section is expanded
-        resultsDiv.querySelectorAll('.audio-placeholder').forEach(placeholder => {
-            loadAudio(placeholder);
-        });
+        // Setup lazy loading for audio players instead of loading all at once
+        if ('IntersectionObserver' in window && window.audioObserver) {
+            // Observe new placeholders
+            resultsDiv.querySelectorAll('.audio-placeholder').forEach(placeholder => {
+                window.audioObserver.observe(placeholder);
+            });
+        } else {
+            // For older browsers, add visible items to the queue
+            setTimeout(() => {
+                const visiblePlaceholders = Array.from(resultsDiv.querySelectorAll('.audio-placeholder'))
+                    .filter(placeholder => audioQueue.isInViewport(placeholder));
+                
+                visiblePlaceholders.forEach(placeholder => {
+                    audioQueue.add(placeholder);
+                });
+            }, 100);
+        }
         
         // Load segments data for navigation if not already loaded
         if (!sourceSegments[sourceId]) {
@@ -386,6 +491,14 @@ document.addEventListener('DOMContentLoaded', function() {
         const jsonPath = `/export/source/${encodeURIComponent(sourceId)}?type=json`;
         initializeSourceSegments(sourceId, jsonPath);
     });
+    
+    // Setup lazy loading for audio placeholders
+    setupLazyLoading();
+    
+    // Handle window resize events for lazy loading visible audio
+    window.addEventListener('resize', debounce(() => {
+        lazyLoadAudioPlayers();
+    }, 200));
 });
 
 // Function to update pagination UI
@@ -710,4 +823,79 @@ document.addEventListener('DOMContentLoaded', function() {
         progressiveInput.value = 'true';
         searchForm.appendChild(progressiveInput);
     }
-}); 
+});
+
+// Lazy load audio players that are in the viewport
+function lazyLoadAudioPlayers() {
+    const placeholders = document.querySelectorAll('.audio-placeholder');
+    
+    // Create an array of visible placeholders to load first
+    const visiblePlaceholders = Array.from(placeholders).filter(placeholder => 
+        audioQueue.isInViewport(placeholder) && 
+        placeholder.closest('.source-results').style.display !== 'none'
+    );
+    
+    // Add visible ones to queue with higher priority
+    visiblePlaceholders.forEach(placeholder => {
+        audioQueue.add(placeholder);
+    });
+    
+    // Then add the rest with lower priority
+    placeholders.forEach(placeholder => {
+        if (!visiblePlaceholders.includes(placeholder) && 
+            placeholder.closest('.source-results').style.display !== 'none') {
+            audioQueue.add(placeholder);
+        }
+    });
+}
+
+// Setup intersection observer for lazy loading
+function setupLazyLoading() {
+    if ('IntersectionObserver' in window) {
+        const loadAudioIfVisible = (entries, observer) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting && entry.target.classList.contains('audio-placeholder')) {
+                    // Add to queue with high priority since it's visible
+                    audioQueue.add(entry.target);
+                }
+            });
+        };
+        
+        const observer = new IntersectionObserver(loadAudioIfVisible, {
+            root: null,
+            rootMargin: '50px',
+            threshold: 0.1
+        });
+        
+        // Observe all audio placeholders
+        document.querySelectorAll('.audio-placeholder').forEach(placeholder => {
+            if (placeholder.closest('.source-results').style.display !== 'none') {
+                observer.observe(placeholder);
+            }
+        });
+        
+        // Store observer in window for future use
+        window.audioObserver = observer;
+    } else {
+        // Fallback for browsers that don't support IntersectionObserver
+        lazyLoadAudioPlayers();
+        
+        // Add scroll listener for lazy loading
+        window.addEventListener('scroll', debounce(() => {
+            lazyLoadAudioPlayers();
+        }, 200));
+    }
+}
+
+// Helper function to limit function calls
+function debounce(func, wait) {
+    let timeout;
+    return function() {
+        const context = this;
+        const args = arguments;
+        clearTimeout(timeout);
+        timeout = setTimeout(() => {
+            func.apply(context, args);
+        }, wait);
+    };
+} 
