@@ -195,8 +195,8 @@ function addContextToResult(resultItem) {
     const currentIndex = findSegmentIndex(start, segments);
     if (currentIndex === -1) return;
     
-    // Get context segments (3 before, current, 3 after) to create a passage
-    const contextRange = 3; // Number of segments before and after current
+    // Get context segments (6 before, current, 6 after) to create a passage
+    const contextRange = 6; // Doubled from 3 to 6 segments before and after current
     const startIdx = Math.max(0, currentIndex - contextRange);
     const endIdx = Math.min(segments.length - 1, currentIndex + contextRange);
     
@@ -397,8 +397,8 @@ function scrollContext(resultItem, direction) {
     if (!segments) return;
     
     // Calculate new index based on direction
-    // For continuous passage, we move 3 segments at a time
-    const scrollAmount = 3;
+    // For continuous passage, we move 6 segments at a time (doubled from 3)
+    const scrollAmount = 6;
     let newIndex;
     
     if (direction === 'up') {
