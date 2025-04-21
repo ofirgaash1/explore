@@ -2,6 +2,9 @@ from flask import Flask
 from pathlib import Path
 from .services.analytics_service import AnalyticsService
 import os
+from dotenv import load_dotenv, dotenv_values 
+
+load_dotenv() 
 
 def create_app():
     app = Flask(__name__)
@@ -16,15 +19,16 @@ def create_app():
     app.config['AUDIO_DIR'].mkdir(parents=True, exist_ok=True)
     
     # Configure PostHog
-    posthog_api_key = os.environ.get('POSTHOG_API_KEY', '')
-    posthog_host = os.environ.get('POSTHOG_HOST', 'https://app.posthog.com')
-    analytics_disabled = os.environ.get('DISABLE_ANALYTICS', '').lower() in ('true', '1', 'yes')
+    
+    app.config['POSTHOG_API_KEY'] = os.environ.get('POSTHOG_API_KEY', '')
+    app.config['POSTHOG_HOST'] = os.environ.get('POSTHOG_HOST', 'https://app.posthog.com')
+    app.config['DISABLE_ANALYTICS'] = os.environ.get('DISABLE_ANALYTICS', '').lower() in ('true', '1', 'yes')
     
     # Initialize analytics service
     analytics_service = AnalyticsService(
-        api_key=posthog_api_key,
-        host=posthog_host,
-        disabled=analytics_disabled or not posthog_api_key
+        api_key=app.config['POSTHOG_API_KEY'],
+        host=app.config['POSTHOG_HOST'],
+        disabled=app.config['DISABLE_ANALYTICS']
     )
     app.config['ANALYTICS_SERVICE'] = analytics_service
     

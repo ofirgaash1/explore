@@ -136,7 +136,8 @@ if __name__ == '__main__':
         app.run(
             debug=True,  # Enable debug mode for development
             port=args.port,
-            host='0.0.0.0'
+            host='0.0.0.0',
+            threaded=True
         )
     else:
         # Production mode - with SSL
@@ -155,5 +156,6 @@ if __name__ == '__main__':
             debug=False,
             port=args.port,
             host='0.0.0.0',
-            ssl_context=ssl_context
+            ssl_context=ssl_context,
+            threaded=True
         ) 
