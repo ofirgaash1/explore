@@ -195,56 +195,57 @@ function addContextToResult(resultItem) {
     const currentIndex = findSegmentIndex(start, segments);
     if (currentIndex === -1) return;
     
-    // Get previous, current, and next segments
-    const prevSegments = [];
-    for (let i = Math.max(0, currentIndex - 2); i < currentIndex; i++) {
-        prevSegments.push(segments[i]);
-    }
-    
-    const currentSegment = segments[currentIndex];
-    
-    const nextSegments = [];
-    for (let i = currentIndex + 1; i <= Math.min(segments.length - 1, currentIndex + 2); i++) {
-        nextSegments.push(segments[i]);
-    }
+    // Get context segments (3 before, current, 3 after) to create a passage
+    const contextRange = 3; // Number of segments before and after current
+    const startIdx = Math.max(0, currentIndex - contextRange);
+    const endIdx = Math.min(segments.length - 1, currentIndex + contextRange);
     
     // Create context HTML
     let contextHtml = '';
     
-    // Add previous segments if available
-    prevSegments.forEach((segment, idx) => {
-        contextHtml += `<div class="context-segment prev-segment" data-start="${segment.start}" data-index="${currentIndex - (prevSegments.length - idx)}">
-            <span class="segment-time">${formatTime(segment.start)}</span>
-            ${segment.text}
-        </div>`;
-    });
-    
-    // Add current segment with highlighted query
-    let currentText = currentSegment.text;
-    if (query) {
-        // Escape special regex characters in the query
-        const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-        // Create a regex that matches the query with word boundaries (if possible)
-        const regex = new RegExp(`(${escapedQuery})`, 'gi');
-        currentText = currentText.replace(regex, '<strong>$1</strong>');
+    // Add segments as a continuous passage
+    for (let i = startIdx; i <= endIdx; i++) {
+        const segment = segments[i];
+        let segmentClass = '';
+        
+        if (i < currentIndex) {
+            segmentClass = 'prev-segment';
+        } else if (i === currentIndex) {
+            segmentClass = 'current-segment';
+        } else {
+            segmentClass = 'next-segment';
+        }
+        
+        // For the current segment, highlight the query text if it exists
+        let segmentText = segment.text;
+        if (i === currentIndex && query) {
+            // Escape special regex characters in the query
+            const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            // Create a regex that matches the query with word boundaries (if possible)
+            const regex = new RegExp(`(${escapedQuery})`, 'gi');
+            segmentText = segmentText.replace(regex, '<strong>$1</strong>');
+        }
+        
+        contextHtml += `<span class="context-segment ${segmentClass}" data-start="${segment.start}" data-index="${i}">${segmentText}</span>`;
+        
+        // Add a small separator between segments
+        if (i < endIdx) {
+            contextHtml += ' ';
+        }
     }
-    
-    contextHtml += `<div class="context-segment current-segment" data-start="${currentSegment.start}" data-index="${currentIndex}">
-        <span class="segment-time">${formatTime(currentSegment.start)}</span>
-        ${currentText}
-    </div>`;
-    
-    // Add next segments if available
-    nextSegments.forEach((segment, idx) => {
-        contextHtml += `<div class="context-segment next-segment" data-start="${segment.start}" data-index="${currentIndex + idx + 1}">
-            <span class="segment-time">${formatTime(segment.start)}</span>
-            ${segment.text}
-        </div>`;
-    });
     
     // Update the result text
     const textContainer = resultItem.querySelector('.result-text-container');
     const resultText = resultItem.querySelector('.result-text');
+    
+    // Create context scroller controls - more minimal now
+    const scrollerControls = document.createElement('div');
+    scrollerControls.className = 'context-scroller';
+    scrollerControls.innerHTML = `
+        <span class="scroller-position">קטע ${currentIndex + 1} מתוך ${segments.length}</span>
+        <button class="scroller-btn" data-direction="up" title="לקטעים מוקדמים יותר">▲</button>
+        <button class="scroller-btn" data-direction="down" title="לקטעים בהמשך">▼</button>
+    `;
     
     // Replace the single result text with the context container
     const contextContainer = document.createElement('div');
@@ -268,6 +269,12 @@ function addContextToResult(resultItem) {
                     if (exportLink) {
                         exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
                     }
+                    
+                    // Highlight the clicked segment
+                    contextContainer.querySelectorAll('.context-segment').forEach(s => {
+                        s.classList.remove('active-segment');
+                    });
+                    this.classList.add('active-segment');
                 }
             } else {
                 // Fallback to the old method
@@ -275,15 +282,6 @@ function addContextToResult(resultItem) {
             }
         });
     });
-    
-    // Add context scroller controls
-    const scrollerControls = document.createElement('div');
-    scrollerControls.className = 'context-scroller';
-    scrollerControls.innerHTML = `
-       <button class="scroller-btn" data-direction="up" title="לקטעים מוקדמים יותר">▲ הקודם</button>
-        <span class="scroller-position">קטע ${currentIndex + 1} מתוך ${segments.length}</span>
-       <button class="scroller-btn" data-direction="down" title="לקטעים בהמשך">הבא ▼</button>
-    `;
     
     // Add event listeners to scroller buttons
     scrollerControls.querySelectorAll('.scroller-btn').forEach(btn => {
@@ -323,6 +321,12 @@ function addContextToResult(resultItem) {
                             if (exportLink) {
                                 exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
                             }
+                            
+                            // Highlight the clicked segment
+                            existingContext.querySelectorAll('.context-segment').forEach(s => {
+                                s.classList.remove('active-segment');
+                            });
+                            this.classList.add('active-segment');
                         }
                     } else {
                         // Fallback to the old method
@@ -392,21 +396,31 @@ function scrollContext(resultItem, direction) {
     const segments = sourceSegments[source];
     if (!segments) return;
     
+    // Calculate new index based on direction
+    // For continuous passage, we move 3 segments at a time
+    const scrollAmount = 3;
     let newIndex;
     
     if (direction === 'up') {
-        // Move up 3 segments if possible, or to the beginning
-        newIndex = Math.max(0, currentIndex - 3);
+        // Move up by scroll amount
+        newIndex = Math.max(0, currentIndex - scrollAmount);
     } else {
-        // Move down 3 segments if possible, or to the end
-        newIndex = Math.min(segments.length - 1, currentIndex + 3);
+        // Move down by scroll amount
+        newIndex = Math.min(segments.length - 1, currentIndex + scrollAmount);
     }
     
     // If we're already at the limit, don't do anything
     if (newIndex === currentIndex) return;
     
-    // Update to the new segment without changing audio
-    updateSegmentContext(resultItem, segments[newIndex], source);
+    // Update the data attribute for the result item
+    resultItem.dataset.currentIndex = newIndex;
+    resultItem.dataset.start = segments[newIndex].start;
+    
+    // Update the context display
+    addContextToResult(resultItem);
+    
+    // Optionally, scroll to the newly displayed content
+    resultItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 function prevSegment(button) {
