@@ -72,15 +72,28 @@
     box-shadow: 0 2px 4px rgba(0,0,0,0.1);
     margin-bottom: 1rem;
     overflow: hidden;
+    position: relative;
+}
+
+.source-group + .source-group {
+    margin-top: 2rem;
 }
 
 .source-header {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     padding: 1rem 1.5rem;
     cursor: pointer;
-    transition: background-color 0.2s;
-    border-bottom: 1px solid transparent;
+    transition: background-color 0.2s, box-shadow 0.3s;
+    border-bottom: 1px solid #e2e8f0;
+    background-color: white;
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    width: 100%;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+    border-radius: 12px 12px 0 0;
 }
 
 .source-header:hover {
@@ -116,6 +129,8 @@
     margin-top: 0.5rem;
     width: 100%;
     padding: 0.5rem 0.5rem 0 0;
+    position: relative;
+    z-index: 10;
 }
 
 .source-header .audio-placeholder {
@@ -175,12 +190,7 @@
     color: #4299e1;
 }
 
-.context-segment:hover::after {
-    content: "🔊";
-    font-size: 0.75rem;
-    margin-right: 2px;
-    color: #4299e1;
-}
+
 
 .active-segment {
     background-color: #bee3f8;
@@ -275,6 +285,8 @@ audio {
     padding: 0.3rem;
     background-color: transparent;
     border: none;
+    position: relative;
+    z-index: 2;
 }
 
 .scroller-btn {
@@ -401,6 +413,8 @@ audio {
 /* Results content */
 .source-results {
     padding: 0;
+    position: relative;
+    z-index: 1;
 }
 
 .result-item {
@@ -415,4 +429,9 @@ audio {
 
 .result-item:hover {
     background-color: #f7fafc;
+}
+
+/* Apply a stronger shadow when header is in sticky position */
+.source-header.is-sticky {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
 } 

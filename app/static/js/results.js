@@ -538,6 +538,9 @@ document.addEventListener('DOMContentLoaded', function() {
     window.addEventListener('resize', debounce(() => {
         lazyLoadAudioPlayers();
     }, 200));
+    
+    // Setup sticky header detection
+    setupStickyHeaderDetection();
 });
 
 // Function to update pagination UI
@@ -937,4 +940,30 @@ function debounce(func, wait) {
             func.apply(context, args);
         }, wait);
     };
+}
+
+// Function to detect when source headers are in sticky position
+function setupStickyHeaderDetection() {
+    // Use IntersectionObserver to detect when headers become sticky
+    if ('IntersectionObserver' in window) {
+        const sourceGroups = document.querySelectorAll('.source-group');
+        
+        sourceGroups.forEach(group => {
+            const header = group.querySelector('.source-header');
+            const stickyObserver = new IntersectionObserver(
+                (entries) => {
+                    // When the top of the source-group is not visible, the header is sticky
+                    const isSticky = entries[0].intersectionRatio < 1;
+                    header.classList.toggle('is-sticky', isSticky);
+                },
+                {
+                    threshold: [1.0],
+                    rootMargin: '-1px 0px 0px 0px'
+                }
+            );
+            
+            // Observe the top edge of the source-group
+            stickyObserver.observe(group);
+        });
+    }
 } 
