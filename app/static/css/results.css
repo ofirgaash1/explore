@@ -118,51 +118,8 @@
     padding: 0.5rem 0.5rem 0 0;
 }
 
-.source-header .audio-controls {
-    justify-content: flex-end;
-}
-
 .source-header .audio-placeholder {
     display: none; /* Hide placeholder initially */
-}
-
-.btn {
-    padding: 0.4rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.85rem;
-    font-weight: 500;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s;
-    white-space: nowrap;
-}
-
-.btn-export {
-    background-color: #ebf4ff;
-    color: #4299e1;
-}
-
-.btn-export:hover {
-    background-color: #bee3f8;
-}
-
-/* Results content */
-.source-results {
-    padding: 0;
-}
-
-.result-item {
-    padding: 1rem 1.5rem;
-    border-bottom: 1px solid #edf2f7;
-    transition: background-color 0.2s;
-}
-
-.result-item:last-child {
-    border-bottom: none;
-}
-
-.result-item:hover {
-    background-color: #f7fafc;
 }
 
 .result-content {
@@ -174,28 +131,6 @@
 .result-text-container {
     flex: 1;
     width: 100%;
-}
-
-.audio-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-}
-
-.audio-btn {
-    background-color: #edf2f7;
-    color: #4a5568;
-    padding: 0.3rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.8rem;
-    cursor: pointer;
-    border: none;
-    transition: all 0.2s;
-}
-
-.audio-btn:hover {
-    background-color: #e2e8f0;
 }
 
 .result-text {
@@ -448,4 +383,43 @@ audio {
     min-width: 2rem;
     height: 2rem;
     color: #4a5568;
+}
+
+.btn {
+    padding: 0.4rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.btn-export {
+    background-color: #ebf4ff;
+    color: #4299e1;
+}
+
+.btn-export:hover {
+    background-color: #bee3f8;
+}
+
+/* Results content */
+.source-results {
+    padding: 0;
+}
+
+.result-item {
+    padding: 1rem 1.5rem;
+    border-bottom: 1px solid #edf2f7;
+    transition: background-color 0.2s;
+}
+
+.result-item:last-child {
+    border-bottom: none;
+}
+
+.result-item:hover {
+    background-color: #f7fafc;
 } 

@@ -143,43 +143,6 @@ function loadAudio(placeholder) {
     audio.appendChild(sourceElement);
     audioContainer.appendChild(audio);
     
-    // Add audio navigation buttons
-    const audioControls = document.createElement('div');
-    audioControls.className = 'audio-controls';
-    
-    // Add 15-second back button
-    const back15Btn = document.createElement('button');
-    back15Btn.className = 'audio-btn';
-    back15Btn.textContent = '⏪ -15ש';
-    back15Btn.onclick = function() { skipAudio(audio, -15); };
-    
-    // Add 5-second back button
-    const back5Btn = document.createElement('button');
-    back5Btn.className = 'audio-btn';
-    back5Btn.textContent = '◀ -5ש';
-    back5Btn.onclick = function() { skipAudio(audio, -5); };
-    
-    // Add 5-second forward button
-    const forward5Btn = document.createElement('button');
-    forward5Btn.className = 'audio-btn';
-    forward5Btn.textContent = '+5ש ▶';
-    forward5Btn.onclick = function() { skipAudio(audio, 5); };
-    
-    // Add 15-second forward button
-    const forward15Btn = document.createElement('button');
-    forward15Btn.className = 'audio-btn';
-    forward15Btn.textContent = '+15ש ⏩';
-    forward15Btn.onclick = function() { skipAudio(audio, 15); };
-    
-    // Add buttons to controls in order
-    audioControls.appendChild(forward15Btn);
-    audioControls.appendChild(forward5Btn);
-    audioControls.appendChild(back5Btn);
-    audioControls.appendChild(back15Btn);
-
-    
-    audioContainer.appendChild(audioControls);
-    
     placeholder.replaceWith(audioContainer);
     return audio;
 }
@@ -196,12 +159,6 @@ function playFromSourceAudio(source, timestamp) {
     // Update current time and play
     audio.currentTime = parseFloat(timestamp);
     audio.play();
-}
-
-function skipAudio(audio, seconds) {
-    const newTime = Math.max(0, audio.currentTime + seconds);
-    audio.currentTime = newTime;
-    audio.dataset.currentTime = newTime;
 }
 
 function formatTime(seconds) {
