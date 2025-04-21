@@ -118,6 +118,7 @@ function loadAudio(placeholder) {
     
     const audioContainer = document.createElement('div');
     audioContainer.className = 'audio-container';
+    audioContainer.dataset.source = source;
     
     // Create audio element
     const audio = document.createElement('audio');
@@ -181,6 +182,20 @@ function loadAudio(placeholder) {
     
     placeholder.replaceWith(audioContainer);
     return audio;
+}
+
+// Function to play from specific timestamp in source header audio
+function playFromSourceAudio(source, timestamp) {
+    // Find the source header audio element
+    const sourceHeader = document.querySelector(`.source-group .source-header .audio-container[data-source="${encodeURIComponent(source)}"]`);
+    if (!sourceHeader) return;
+    
+    const audio = sourceHeader.querySelector('audio');
+    if (!audio) return;
+    
+    // Update current time and play
+    audio.currentTime = parseFloat(timestamp);
+    audio.play();
 }
 
 function skipAudio(audio, seconds) {
@@ -282,7 +297,25 @@ function addContextToResult(resultItem) {
     // Add click event listeners to segments for audio playback
     contextContainer.querySelectorAll('.context-segment').forEach(segment => {
         segment.addEventListener('click', function() {
-            playSegmentAudio(resultItem, this.dataset.start, source);
+            // Find the source header audio
+            const sourceHeader = document.querySelector(`.source-header .audio-container`);
+            if (sourceHeader) {
+                // Play the segment using the source header audio
+                const audio = sourceHeader.querySelector('audio');
+                if (audio) {
+                    audio.currentTime = parseFloat(this.dataset.start);
+                    audio.play();
+                    
+                    // Update export link
+                    const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
+                    if (exportLink) {
+                        exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
+                    }
+                }
+            } else {
+                // Fallback to the old method
+                playSegmentAudio(resultItem, this.dataset.start, source);
+            }
         });
     });
     
@@ -320,7 +353,24 @@ function addContextToResult(resultItem) {
             // Re-add click event listeners to segments
             existingContext.querySelectorAll('.context-segment').forEach(segment => {
                 segment.addEventListener('click', function() {
-                    playSegmentAudio(resultItem, this.dataset.start, source);
+                    // Play using source header audio if available
+                    const sourceHeader = document.querySelector(`.source-header .audio-container`);
+                    if (sourceHeader) {
+                        const audio = sourceHeader.querySelector('audio');
+                        if (audio) {
+                            audio.currentTime = parseFloat(this.dataset.start);
+                            audio.play();
+                            
+                            // Update export link
+                            const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
+                            if (exportLink) {
+                                exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
+                            }
+                        }
+                    } else {
+                        // Fallback to the old method
+                        playSegmentAudio(resultItem, this.dataset.start, source);
+                    }
                 });
             });
         } else {
@@ -343,26 +393,38 @@ function playSegmentAudio(resultItem, startTime, source) {
         exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${startTime}&duration=10`;
     }
     
-    // Update the audio element or placeholder
-    const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
-    if (audioPlaceholder) {
-        // If we still have a placeholder, update its data and load the audio
-        audioPlaceholder.dataset.start = startTime;
-        const audio = loadAudio(audioPlaceholder);
+    // Find the source header audio element
+    const sourceHeader = document.querySelector(`.source-header .audio-container`);
+    const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
+    
+    if (audio) {
+        // If we already have a source header audio element, use it
+        audio.currentTime = parseFloat(startTime);
         audio.play();
     } else {
-        // If we already have an audio element, update its source
-        const audio = resultItem.querySelector('audio');
-        const sourceElement = audio.querySelector('source');
-        const format = sourceElement.type.split('/')[1];
-        const newSrc = `/audio/${encodeURIComponent(source)}.${format}#t=${startTime}`;
+        // Fallback to the old method if source header audio isn't available
+        const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
+        if (audioPlaceholder) {
+            // If we still have a placeholder, update its data and load the audio
+            audioPlaceholder.dataset.start = startTime;
+            const audio = loadAudio(audioPlaceholder);
+            audio.play();
+        } else {
+            // If we already have an audio element, update its source
+            const audio = resultItem.querySelector('audio');
+            if (audio) {
+                const sourceElement = audio.querySelector('source');
+                const format = sourceElement.type.split('/')[1];
+                const newSrc = `/audio/${encodeURIComponent(source)}.${format}#t=${startTime}`;
 
-        if (audio.src !== newSrc) {
-            audio.src = newSrc;
-            audio.load();
+                if (audio.src !== newSrc) {
+                    audio.src = newSrc;
+                    audio.load();
+                }
+                audio.play();
+            }
         }
-        audio.play();
-        }
+    }
 }
 
 function scrollContext(resultItem, direction) {
@@ -476,6 +538,12 @@ function toggleSource(sourceId) {
         if (!sourceSegments[sourceId]) {
             const jsonPath = `/export/source/${encodeURIComponent(sourceId)}?type=json`;
             initializeSourceSegments(sourceId, jsonPath);
+        }
+        
+        // Load source header audio player
+        const sourcePlaceholder = document.querySelector(`.source-header .audio-placeholder[data-source="${encodeURIComponent(sourceId)}"]`);
+        if (sourcePlaceholder && sourcePlaceholder.classList.contains('audio-placeholder')) {
+            loadAudio(sourcePlaceholder);
         }
     } else {
         resultsDiv.style.display = 'none';

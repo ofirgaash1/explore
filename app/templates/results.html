@@ -110,19 +110,17 @@
                 <a href="{{ url_for('export.export_source_files', source=source, type='json') }}" class="btn btn-export">JSON</a>
                 <a href="{{ url_for('export.export_source_files', source=source, type='audio') }}" class="btn btn-export">אודיו</a>
             </div>
+            <div class="audio-placeholder source-audio-placeholder" 
+                data-source="{{ source|urlencode }}"
+                data-format="{{ available_files[source].audio_format }}"
+                data-start="0">
+            </div>
         </div>
         
         <div id="{{ source }}-results" class="source-results" style="display: none;">
             {% for result in source_results %}
             <div class="result-item" data-start="{{ result.start }}" data-source="{{ source }}">
                 <div class="result-content">
-                    <div class="result-audio">
-                        <div class="audio-placeholder" 
-                             data-source="{{ source|urlencode }}"
-                             data-format="{{ available_files[source].audio_format }}"
-                             data-start="{{ result.start }}">
-                        </div>
-                    </div>
                     <div class="result-text-container">
                         <p class="result-text">{{ result.text }}</p>
                         <div class="result-actions">
@@ -214,10 +212,11 @@
             icon.textContent = '▼';
             icon.style.transform = 'rotate(0deg)';
             
-            // Load audio players when section is expanded
-            resultsDiv.querySelectorAll('.audio-placeholder').forEach(placeholder => {
-                loadAudio(placeholder);
-            });
+            // Load source audio player when section is expanded
+            const sourcePlaceholder = document.querySelector(`.source-group .source-header .audio-placeholder[data-source="${encodeURIComponent(sourceId)}"]`);
+            if (sourcePlaceholder && sourcePlaceholder.classList.contains('audio-placeholder')) {
+                loadAudio(sourcePlaceholder);
+            }
         } else {
             resultsDiv.style.display = 'none';
             icon.textContent = '▶';
