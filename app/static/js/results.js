@@ -255,27 +255,30 @@ function addContextToResult(resultItem) {
     // Add click event listeners to segments for audio playback
     contextContainer.querySelectorAll('.context-segment').forEach(segment => {
         segment.addEventListener('click', function() {
-            // Find the source header audio
-            const sourceHeader = document.querySelector(`.source-header .audio-container`);
-            if (sourceHeader) {
+            // Find the parent source group of this result item
+            const sourceGroup = resultItem.closest('.source-group');
+            if (!sourceGroup) return;
+            
+            // Find the audio player in THIS source group's header
+            const sourceHeader = sourceGroup.querySelector('.source-header');
+            const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
+            
+            if (audio) {
                 // Play the segment using the source header audio
-                const audio = sourceHeader.querySelector('audio');
-                if (audio) {
-                    audio.currentTime = parseFloat(this.dataset.start);
-                    audio.play();
-                    
-                    // Update export link
-                    const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
-                    if (exportLink) {
-                        exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
-                    }
-                    
-                    // Highlight the clicked segment
-                    contextContainer.querySelectorAll('.context-segment').forEach(s => {
-                        s.classList.remove('active-segment');
-                    });
-                    this.classList.add('active-segment');
+                audio.currentTime = parseFloat(this.dataset.start);
+                audio.play();
+                
+                // Update export link
+                const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
+                if (exportLink) {
+                    exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
                 }
+                
+                // Highlight the clicked segment
+                contextContainer.querySelectorAll('.context-segment').forEach(s => {
+                    s.classList.remove('active-segment');
+                });
+                this.classList.add('active-segment');
             } else {
                 // Fallback to the old method
                 playSegmentAudio(resultItem, this.dataset.start, source);
@@ -308,26 +311,30 @@ function addContextToResult(resultItem) {
             // Re-add click event listeners to segments
             existingContext.querySelectorAll('.context-segment').forEach(segment => {
                 segment.addEventListener('click', function() {
-                    // Play using source header audio if available
-                    const sourceHeader = document.querySelector(`.source-header .audio-container`);
-                    if (sourceHeader) {
-                        const audio = sourceHeader.querySelector('audio');
-                        if (audio) {
-                            audio.currentTime = parseFloat(this.dataset.start);
-                            audio.play();
-                            
-                            // Update export link
-                            const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
-                            if (exportLink) {
-                                exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
-                            }
-                            
-                            // Highlight the clicked segment
-                            existingContext.querySelectorAll('.context-segment').forEach(s => {
-                                s.classList.remove('active-segment');
-                            });
-                            this.classList.add('active-segment');
+                    // Find the parent source group of this result item
+                    const sourceGroup = resultItem.closest('.source-group');
+                    if (!sourceGroup) return;
+                    
+                    // Find the audio player in THIS source group's header
+                    const sourceHeader = sourceGroup.querySelector('.source-header');
+                    const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
+                    
+                    if (audio) {
+                        // Play the segment using the source header audio
+                        audio.currentTime = parseFloat(this.dataset.start);
+                        audio.play();
+                        
+                        // Update export link
+                        const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
+                        if (exportLink) {
+                            exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
                         }
+                        
+                        // Highlight the clicked segment
+                        existingContext.querySelectorAll('.context-segment').forEach(s => {
+                            s.classList.remove('active-segment');
+                        });
+                        this.classList.add('active-segment');
                     } else {
                         // Fallback to the old method
                         playSegmentAudio(resultItem, this.dataset.start, source);
@@ -354,16 +361,20 @@ function playSegmentAudio(resultItem, startTime, source) {
         exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${startTime}&duration=10`;
     }
     
-    // Find the source header audio element
-    const sourceHeader = document.querySelector(`.source-header .audio-container`);
+    // Find the parent source group of this result item
+    const sourceGroup = resultItem.closest('.source-group');
+    if (!sourceGroup) return;
+    
+    // Find the audio player in THIS source group's header
+    const sourceHeader = sourceGroup.querySelector('.source-header');
     const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
     
     if (audio) {
-        // If we already have a source header audio element, use it
+        // If we found the audio in the source header, use it
         audio.currentTime = parseFloat(startTime);
         audio.play();
     } else {
-        // Fallback to the old method if source header audio isn't available
+        // Fallback to the old method (using result item's audio)
         const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
         if (audioPlaceholder) {
             // If we still have a placeholder, update its data and load the audio
