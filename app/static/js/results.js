@@ -1,6 +1,79 @@
 // Store all segments data for each source
 const sourceSegments = {};
 
+// Track active text synchronization
+const textSync = {
+    activeResultItem: null,
+    activeContextContainer: null,
+    currentSegmentIndex: -1,
+    
+    // Start tracking synchronization for a specific result item
+    start: function(resultItem, contextContainer, initialSegmentIndex) {
+        this.activeResultItem = resultItem;
+        this.activeContextContainer = contextContainer;
+        this.currentSegmentIndex = initialSegmentIndex;
+        
+        // Highlight the initial segment
+        this.highlightSegment(initialSegmentIndex);
+    },
+    
+    // Stop tracking
+    stop: function() {
+        if (this.activeContextContainer) {
+            // Remove all active highlights
+            this.activeContextContainer.querySelectorAll('.context-segment').forEach(segment => {
+                segment.classList.remove('active-segment');
+            });
+        }
+        
+        this.activeResultItem = null;
+        this.activeContextContainer = null;
+        this.currentSegmentIndex = -1;
+    },
+    
+    // Highlight a specific segment by index
+    highlightSegment: function(index) {
+        if (!this.activeContextContainer) return;
+        
+        // Remove existing highlights
+        this.activeContextContainer.querySelectorAll('.context-segment').forEach(segment => {
+            segment.classList.remove('active-segment');
+        });
+        
+        // Add highlight to the new segment
+        const segmentToHighlight = this.activeContextContainer.querySelector(`.context-segment[data-index="${index}"]`);
+        if (segmentToHighlight) {
+            segmentToHighlight.classList.add('active-segment');
+            
+            // Scroll the segment into view if needed
+            if (!isElementInViewport(segmentToHighlight)) {
+                segmentToHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
+        }
+        
+        this.currentSegmentIndex = index;
+    },
+    
+    // Update highlight based on current audio time
+    updateHighlight: function(currentTime, segments) {
+        if (!segments || !this.activeContextContainer) return;
+        
+        // Find the current segment based on time
+        for (let i = 0; i < segments.length; i++) {
+            const segment = segments[i];
+            const nextSegment = segments[i + 1];
+            
+            // If this is the last segment or current time is between this segment's start and next segment's start
+            if (!nextSegment || (currentTime >= segment.start && currentTime < nextSegment.start)) {
+                if (i !== this.currentSegmentIndex) {
+                    this.highlightSegment(i);
+                }
+                break;
+            }
+        }
+    }
+};
+
 // Global audio manager to ensure only one audio plays at a time
 const audioManager = {
     currentlyPlaying: null,
@@ -11,6 +84,9 @@ const audioManager = {
             // Stop any currently playing audio before playing the new one
             if (this.currentlyPlaying && this.currentlyPlaying !== audio) {
                 this.currentlyPlaying.pause();
+                
+                // Stop text synchronization when audio changes
+                textSync.stop();
             }
             this.currentlyPlaying = audio;
         });
@@ -18,6 +94,16 @@ const audioManager = {
         audio.addEventListener('ended', () => {
             if (this.currentlyPlaying === audio) {
                 this.currentlyPlaying = null;
+                
+                // Stop text synchronization when audio ends
+                textSync.stop();
+            }
+        });
+        
+        audio.addEventListener('pause', () => {
+            if (this.currentlyPlaying === audio) {
+                // Stop text synchronization when audio pauses
+                textSync.stop();
             }
         });
         
@@ -29,6 +115,9 @@ const audioManager = {
         if (this.currentlyPlaying) {
             this.currentlyPlaying.pause();
             this.currentlyPlaying = null;
+            
+            // Stop text synchronization
+            textSync.stop();
         }
     }
 };
@@ -180,6 +269,125 @@ function loadAudio(placeholder) {
         this.currentTime = start;
     });
     
+    // Add play event to sync text when playing from main audio player
+    if (placeholder.classList.contains('source-audio-placeholder')) {
+        // Store the source information before the placeholder is replaced
+        const sourceId = decodeURIComponent(source);
+        
+        audio.addEventListener('play', function() {
+            console.log("Main audio player started, initializing text sync");
+            
+            // Find the source group that contains this audio player
+            const sourceGroup = audioContainer.closest('.source-group');
+            if (!sourceGroup) {
+                console.log("Cannot find source group");
+                return;
+            }
+            
+            // Ensure the results are visible
+            const sourceResults = sourceGroup.querySelector('.source-results');
+            if (sourceResults && sourceResults.style.display === 'none') {
+                console.log("Expanding source results for sync");
+                // If results are hidden, show them first
+                toggleSource(sourceId);
+            }
+            
+            // Get segments for this source
+            const segments = sourceSegments[sourceId];
+            if (!segments) {
+                console.log("No segments found for source:", sourceId);
+                // If segments aren't loaded yet, try to load them
+                if (!sourceSegments[sourceId]) {
+                    console.log("Attempting to load segments");
+                    const jsonPath = `/export/source/${encodeURIComponent(sourceId)}?type=json`;
+                    initializeSourceSegments(sourceId, jsonPath);
+                    // Return and wait for segments to load
+                    return;
+                }
+                return;
+            }
+            
+            // Find the result items for this source
+            const resultItems = sourceResults.querySelectorAll('.result-item');
+            if (resultItems.length === 0) {
+                console.log("No result items found");
+                return;
+            }
+            
+            // Get the current time from the audio player
+            const currentTime = this.currentTime;
+            console.log("Current audio time:", currentTime);
+            
+            // Find the segment index closest to current play time
+            let closestSegmentIndex = -1;
+            let minTimeDiff = Number.MAX_VALUE;
+            
+            segments.forEach((segment, index) => {
+                const timeDiff = Math.abs(segment.start - currentTime);
+                if (timeDiff < minTimeDiff) {
+                    minTimeDiff = timeDiff;
+                    closestSegmentIndex = index;
+                }
+            });
+            
+            if (closestSegmentIndex === -1) {
+                console.log("Could not find matching segment");
+                return;
+            }
+            
+            console.log("Found closest segment:", closestSegmentIndex, "with start time:", segments[closestSegmentIndex].start);
+            
+            // Find the result item that contains this segment time
+            let targetResultItem = null;
+            let targetContextContainer = null;
+            
+            for (let i = 0; i < resultItems.length; i++) {
+                const resultItem = resultItems[i];
+                const itemStartTime = parseFloat(resultItem.dataset.start);
+                // If this result item has a start time close to our segment
+                if (Math.abs(itemStartTime - segments[closestSegmentIndex].start) < 0.5) {
+                    targetResultItem = resultItem;
+                    targetContextContainer = resultItem.querySelector('.context-container');
+                    break;
+                }
+            }
+            
+            // If we couldn't find an exact match, use the first result item
+            if (!targetResultItem) {
+                console.log("Using first result item as fallback");
+                targetResultItem = resultItems[0];
+                targetContextContainer = targetResultItem.querySelector('.context-container');
+                
+                // If context container doesn't exist yet, try adding it
+                if (!targetContextContainer) {
+                    console.log("Adding context to result item");
+                    addContextToResult(targetResultItem);
+                    targetContextContainer = targetResultItem.querySelector('.context-container');
+                }
+            }
+            
+            if (!targetContextContainer) {
+                console.log("No context container found");
+                return;
+            }
+            
+            console.log("Starting text sync with segment", closestSegmentIndex);
+            // Start text synchronization
+            textSync.start(targetResultItem, targetContextContainer, closestSegmentIndex);
+            
+            // Update text highlighting as audio plays
+            const updateHandler = function() {
+                if (segments) {
+                    textSync.updateHighlight(this.currentTime, segments);
+                }
+            };
+            
+            // Remove any existing timeupdate handlers to avoid duplicates
+            this.removeEventListener('timeupdate', updateHandler);
+            this.addEventListener('timeupdate', updateHandler);
+        });
+    }
+    
     placeholder.replaceWith(audioContainer);
     
     // Register with audio manager to ensure only one plays at a time
@@ -309,6 +517,25 @@ function addContextToResult(resultItem) {
                 // Stop any currently playing audio
                 audioManager.stopAll();
                 
+                // Get the segment index
+                const segmentIndex = parseInt(this.dataset.index);
+                
+                // Start text synchronization
+                textSync.start(resultItem, contextContainer, segmentIndex);
+                
+                // Set up timeupdate event for this audio to track current segment
+                audio.addEventListener('timeupdate', function() {
+                    // Get the current time from audio
+                    const currentTime = this.currentTime;
+                    
+                    // Get segments for this source
+                    const source = decodeURIComponent(resultItem.dataset.source);
+                    const segments = sourceSegments[source];
+                    
+                    // Update text highlighting based on current time
+                    textSync.updateHighlight(currentTime, segments);
+                });
+                
                 // Play the segment using the source header audio
                 audio.currentTime = parseFloat(this.dataset.start);
                 audio.play();
@@ -318,12 +545,6 @@ function addContextToResult(resultItem) {
                 if (exportLink) {
                     exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
                 }
-                
-                // Highlight the clicked segment
-                contextContainer.querySelectorAll('.context-segment').forEach(s => {
-                    s.classList.remove('active-segment');
-                });
-                this.classList.add('active-segment');
             } else {
                 // Fallback to the old method
                 playSegmentAudio(resultItem, this.dataset.start, source);
@@ -368,6 +589,25 @@ function addContextToResult(resultItem) {
                         // Stop any currently playing audio
                         audioManager.stopAll();
                         
+                        // Get the segment index
+                        const segmentIndex = parseInt(this.dataset.index);
+                        
+                        // Start text synchronization
+                        textSync.start(resultItem, existingContext, segmentIndex);
+                        
+                        // Set up timeupdate event for this audio to track current segment
+                        audio.addEventListener('timeupdate', function() {
+                            // Get the current time from audio
+                            const currentTime = this.currentTime;
+                            
+                            // Get segments for this source
+                            const source = decodeURIComponent(resultItem.dataset.source);
+                            const segments = sourceSegments[source];
+                            
+                            // Update text highlighting based on current time
+                            textSync.updateHighlight(currentTime, segments);
+                        });
+                        
                         // Play the segment using the source header audio
                         audio.currentTime = parseFloat(this.dataset.start);
                         audio.play();
@@ -377,12 +617,6 @@ function addContextToResult(resultItem) {
                         if (exportLink) {
                             exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
                         }
-                        
-                        // Highlight the clicked segment
-                        existingContext.querySelectorAll('.context-segment').forEach(s => {
-                            s.classList.remove('active-segment');
-                        });
-                        this.classList.add('active-segment');
                     } else {
                         // Fallback to the old method
                         playSegmentAudio(resultItem, this.dataset.start, source);
@@ -417,9 +651,33 @@ function playSegmentAudio(resultItem, startTime, source) {
     const sourceHeader = sourceGroup.querySelector('.source-header');
     const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
     
+    // Find the context container for text synchronization
+    const contextContainer = resultItem.querySelector('.context-container');
+    if (!contextContainer) return;
+    
+    // Find segment index based on start time
+    const segments = sourceSegments[source];
+    if (!segments) return;
+    
+    const segmentIndex = segments.findIndex(seg => 
+        Math.abs(parseFloat(seg.start) - parseFloat(startTime)) < 0.1);
+    
+    if (segmentIndex === -1) return;
+    
     if (audio) {
         // Stop any currently playing audio
         audioManager.stopAll();
+        
+        // Start text synchronization
+        textSync.start(resultItem, contextContainer, segmentIndex);
+        
+        // Set up timeupdate event for this audio to track current segment
+        audio.addEventListener('timeupdate', function() {
+            // Get the current time from audio
+            const currentTime = this.currentTime;
+            // Update text highlighting based on current time
+            textSync.updateHighlight(currentTime, segments);
+        });
         
         // If we found the audio in the source header, use it
         audio.currentTime = parseFloat(startTime);
@@ -434,6 +692,18 @@ function playSegmentAudio(resultItem, startTime, source) {
             // If we still have a placeholder, update its data and load the audio
             audioPlaceholder.dataset.start = startTime;
             const audio = loadAudio(audioPlaceholder);
+            
+            // Start text synchronization
+            textSync.start(resultItem, contextContainer, segmentIndex);
+            
+            // Set up timeupdate event for this audio
+            audio.addEventListener('timeupdate', function() {
+                // Get the current time from audio
+                const currentTime = this.currentTime;
+                // Update text highlighting based on current time
+                textSync.updateHighlight(currentTime, segments);
+            });
+            
             audio.play();
         } else {
             // If we already have an audio element, update its source
@@ -441,6 +711,17 @@ function playSegmentAudio(resultItem, startTime, source) {
             if (audio) {
                 // Stop any currently playing audio
                 audioManager.stopAll();
+                
+                // Start text synchronization
+                textSync.start(resultItem, contextContainer, segmentIndex);
+                
+                // Set up timeupdate event for this audio
+                audio.addEventListener('timeupdate', function() {
+                    // Get the current time from audio
+                    const currentTime = this.currentTime;
+                    // Update text highlighting based on current time
+                    textSync.updateHighlight(currentTime, segments);
+                });
                 
                 const sourceElement = audio.querySelector('source');
                 const format = sourceElement.type.split('/')[1];
