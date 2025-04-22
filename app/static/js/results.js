@@ -1,6 +1,38 @@
 // Store all segments data for each source
 const sourceSegments = {};
 
+// Global audio manager to ensure only one audio plays at a time
+const audioManager = {
+    currentlyPlaying: null,
+    
+    // Register a new audio element
+    register: function(audio) {
+        audio.addEventListener('play', () => {
+            // Stop any currently playing audio before playing the new one
+            if (this.currentlyPlaying && this.currentlyPlaying !== audio) {
+                this.currentlyPlaying.pause();
+            }
+            this.currentlyPlaying = audio;
+        });
+        
+        audio.addEventListener('ended', () => {
+            if (this.currentlyPlaying === audio) {
+                this.currentlyPlaying = null;
+            }
+        });
+        
+        return audio;
+    },
+    
+    // Stop the currently playing audio
+    stopAll: function() {
+        if (this.currentlyPlaying) {
+            this.currentlyPlaying.pause();
+            this.currentlyPlaying = null;
+        }
+    }
+};
+
 // Audio loading queue and management
 const audioQueue = {
     queue: [],
@@ -113,7 +145,7 @@ function initializeSourceSegments(source, jsonPath) {
 function loadAudio(placeholder) {
     const source = placeholder.dataset.source;
     const format = placeholder.dataset.format;
-    const start = placeholder.dataset.start;
+    const start = parseFloat(placeholder.dataset.start) || 0;
     const audioUrl = `/audio/${source}.${format}`;
     
     const audioContainer = document.createElement('div');
@@ -143,8 +175,15 @@ function loadAudio(placeholder) {
     audio.appendChild(sourceElement);
     audioContainer.appendChild(audio);
     
+    // Set initial current time when metadata is loaded
+    audio.addEventListener('loadedmetadata', function() {
+        this.currentTime = start;
+    });
+    
     placeholder.replaceWith(audioContainer);
-    return audio;
+    
+    // Register with audio manager to ensure only one plays at a time
+    return audioManager.register(audio);
 }
 
 // Function to play from specific timestamp in source header audio
@@ -155,6 +194,9 @@ function playFromSourceAudio(source, timestamp) {
     
     const audio = sourceHeader.querySelector('audio');
     if (!audio) return;
+    
+    // Stop any currently playing audio
+    audioManager.stopAll();
     
     // Update current time and play
     audio.currentTime = parseFloat(timestamp);
@@ -264,6 +306,9 @@ function addContextToResult(resultItem) {
             const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
             
             if (audio) {
+                // Stop any currently playing audio
+                audioManager.stopAll();
+                
                 // Play the segment using the source header audio
                 audio.currentTime = parseFloat(this.dataset.start);
                 audio.play();
@@ -320,6 +365,9 @@ function addContextToResult(resultItem) {
                     const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
                     
                     if (audio) {
+                        // Stop any currently playing audio
+                        audioManager.stopAll();
+                        
                         // Play the segment using the source header audio
                         audio.currentTime = parseFloat(this.dataset.start);
                         audio.play();
@@ -370,6 +418,9 @@ function playSegmentAudio(resultItem, startTime, source) {
     const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
     
     if (audio) {
+        // Stop any currently playing audio
+        audioManager.stopAll();
+        
         // If we found the audio in the source header, use it
         audio.currentTime = parseFloat(startTime);
         audio.play();
@@ -377,6 +428,9 @@ function playSegmentAudio(resultItem, startTime, source) {
         // Fallback to the old method (using result item's audio)
         const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
         if (audioPlaceholder) {
+            // Stop any currently playing audio
+            audioManager.stopAll();
+            
             // If we still have a placeholder, update its data and load the audio
             audioPlaceholder.dataset.start = startTime;
             const audio = loadAudio(audioPlaceholder);
@@ -385,6 +439,9 @@ function playSegmentAudio(resultItem, startTime, source) {
             // If we already have an audio element, update its source
             const audio = resultItem.querySelector('audio');
             if (audio) {
+                // Stop any currently playing audio
+                audioManager.stopAll();
+                
                 const sourceElement = audio.querySelector('source');
                 const format = sourceElement.type.split('/')[1];
                 const newSrc = `/audio/${encodeURIComponent(source)}.${format}#t=${startTime}`;
