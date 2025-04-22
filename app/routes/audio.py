@@ -1,6 +1,7 @@
 from flask import Blueprint, send_file, current_app, request, Response
 from urllib.parse import unquote
 from ..services.file_service import FileService
+from ..routes.auth import login_required
 import os
 import mimetypes
 import re
@@ -47,6 +48,7 @@ def send_range_file(path):
     return resp
 
 @bp.route('/audio/<path:filename>')
+@login_required
 def serve_audio(filename):
     try:
         # Remove any file extension from the filename
@@ -81,6 +83,7 @@ def serve_audio(filename):
         return f"Error: {str(e)}", 404
 
 @bp.route('/check-audio/<filename>')
+@login_required
 def check_audio(filename):
     try:
         file_service = FileService(current_app)

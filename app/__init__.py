@@ -3,6 +3,7 @@ from pathlib import Path
 from .services.analytics_service import AnalyticsService
 import os
 from dotenv import load_dotenv, dotenv_values 
+from flask_oauthlib.client import OAuth
 
 load_dotenv() 
 
@@ -34,11 +35,20 @@ def create_app():
     
     app.config['MIME_TYPES'] = {'opus': 'audio/opus'}
     
+    # Set secret key for session
+    app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key')
+    
+    # Initialize Google OAuth
+    from .routes.auth import init_oauth, bp as auth_bp
+    google = init_oauth(app)
+    app.extensions['google_oauth'] = google
+    
     # Register blueprints
     from .routes import main, audio, export
     app.register_blueprint(main.bp)
     app.register_blueprint(audio.bp)
     app.register_blueprint(export.bp)
+    app.register_blueprint(auth_bp)
     
     # Register error handlers
     register_error_handlers(app)

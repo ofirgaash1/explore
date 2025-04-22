@@ -2,3 +2,4 @@ Flask==3.0.0
 pydub==0.25.1
 posthog==3.0.1 
 tqdm==4.67.0
+Flask-OAuthlib==0.9.6

@@ -2,7 +2,7 @@ import posthog
 import logging
 import time
 from functools import wraps
-from flask import request, g, current_app
+from flask import request, g, current_app, session
 
 logger = logging.getLogger(__name__)
 
@@ -39,12 +39,19 @@ class AnalyticsService:
         """Capture an event with properties"""
         if self.disabled:
             return
+        
+        # Initialize properties if None
+        properties = properties or {}
+        
+        # Add user email to properties if available in session
+        if 'user_email' in session:
+            properties['user_email'] = session['user_email']
             
         try:
             posthog.capture(
                 user_id or self._get_user_id(),
                 event_name,
-                properties or {}
+                properties
             )
             logger.debug(f"Captured event: {event_name}")
         except Exception as e:
@@ -69,6 +76,10 @@ class AnalyticsService:
                 'progressive': progressive
             }
             
+            # Add user email to properties if available
+            if 'user_email' in session:
+                properties['user_email'] = session['user_email']
+            
             self.capture_event('search_executed', properties)
             logger.debug(f"Tracked search: {query}")
         except Exception as e:
@@ -89,6 +100,10 @@ class AnalyticsService:
         if format:
             properties['format'] = format
             
+        # Add user email to properties if available
+        if 'user_email' in session:
+            properties['user_email'] = session['user_email']
+            
         self.capture_event('content_exported', properties)
     
     def capture_error(self, error_type, error_message, context=None):
@@ -104,13 +119,18 @@ class AnalyticsService:
         if context:
             properties.update(context)
             
+        # Add user email to properties if available
+        if 'user_email' in session:
+            properties['user_email'] = session['user_email']
+            
         self.capture_event('error_occurred', properties)
     
     def _get_user_id(self):
         """Get user ID from session or generate anonymous ID"""
-        # In a real app, you'd get this from the session
-        # For now, we'll use IP address as a fallback
-        return getattr(g, 'user_id', request.remote_addr)
+        # Use email as user ID if available, otherwise use IP
+        if 'user_email' in session:
+            return session['user_email']
+        return request.remote_addr
 
 # Create a timing decorator for performance tracking
 def track_performance(event_name, include_args=None):
@@ -146,6 +166,10 @@ def track_performance(event_name, include_args=None):
                     
                     if not success:
                         properties['error'] = error
+                    
+                    # Add user email to properties if available
+                    if 'user_email' in session:
+                        properties['user_email'] = session['user_email']
                         
                     analytics.capture_event(event_name, properties)
             

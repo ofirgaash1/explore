@@ -3,6 +3,7 @@ from ..services.search_service import SearchService
 from ..services.file_service import FileService
 from ..services.analytics_service import track_performance
 # from pydub import AudioSegment  # Commented out
+from ..routes.auth import login_required
 import time
 import os
 import logging
@@ -16,6 +17,7 @@ search_service = None
 file_service = None
 
 @bp.route('/')
+@login_required
 def home():
     # Track page view
     analytics = current_app.config.get('ANALYTICS_SERVICE')
@@ -24,6 +26,7 @@ def home():
     return render_template('home.html')
 
 @bp.route('/search')
+@login_required
 @track_performance('search_executed', include_args=['query', 'use_regex', 'use_substring', 'max_results', 'page'])
 def search():
     query = request.args.get('q', '')

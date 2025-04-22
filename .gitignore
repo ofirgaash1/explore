@@ -175,3 +175,9 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+client_secret.json
+
+awscliv2.zip
+aws/install
+aws/README.md
+aws/THIRD_PARTY_LICENSES

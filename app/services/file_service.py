@@ -45,7 +45,7 @@ class FileService:
                     'audio_format': audio_path.suffix[1:],
                     'last_modified': json_path.stat().st_mtime
                 }
-        
+
         cache.update_files_cache(json_files)
         return json_files
     
