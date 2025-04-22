@@ -113,7 +113,7 @@
             <div class="audio-placeholder source-audio-placeholder" 
                 data-source="{{ source|urlencode }}"
                 data-format="{{ available_files[source].audio_format }}"
-                data-start="0">
+                data-start="{{ source_results[0].start if source_results else 0 }}">
             </div>
         </div>
         
