@@ -44,11 +44,12 @@ def create_app():
     app.extensions['google_oauth'] = google
     
     # Register blueprints
-    from .routes import main, audio, export
+    from .routes import main, audio, export, api
     app.register_blueprint(main.bp)
     app.register_blueprint(audio.bp)
     app.register_blueprint(export.bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(api.bp)
     
     # Register error handlers
     register_error_handlers(app)

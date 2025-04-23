@@ -1,6 +1,80 @@
 // Store all segments data for each source
 const sourceSegments = {};
 
+// Timing utilities to track user interactions
+const timingLogger = {
+    timestamps: {},
+    requestId: '',
+
+    // Initialize with request ID from server
+    init: function(requestId) {
+        this.requestId = requestId || '';
+        console.log(`Timing logger initialized with request ID: ${this.requestId}`);
+    },
+
+    // Start timing an event
+    start: function(eventName, data = {}) {
+        this.timestamps[eventName] = {
+            startTime: performance.now(),
+            data: data
+        };
+        console.log(`[TIMING] Started ${eventName}`, data);
+    },
+
+    // End timing for an event and send to server
+    end: function(eventName, additionalData = {}) {
+        if (this.timestamps[eventName]) {
+            const endTime = performance.now();
+            const startTime = this.timestamps[eventName].startTime;
+            const duration = endTime - startTime;
+            
+            // Combine initial data with additional data
+            const data = {
+                ...this.timestamps[eventName].data,
+                ...additionalData,
+                duration_ms: duration,
+                request_id: this.requestId
+            };
+            
+            console.log(`[TIMING] Ended ${eventName}: ${duration.toFixed(2)}ms`, data);
+            
+            // Send to server
+            this.sendToServer(eventName, data);
+            
+            // Clean up
+            delete this.timestamps[eventName];
+            
+            return duration;
+        }
+        return null;
+    },
+    
+    // Log a single event (no duration)
+    log: function(eventName, data = {}) {
+        data.request_id = this.requestId;
+        console.log(`[TIMING] Event ${eventName}`, data);
+        this.sendToServer(eventName, data);
+    },
+    
+    // Send timing data to server
+    sendToServer: function(eventName, data) {
+        fetch('/api/log-timing', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                event_type: eventName,
+                data: data
+            }),
+            // Don't wait for response
+            keepalive: true
+        }).catch(error => {
+            console.error('Error sending timing data:', error);
+        });
+    }
+};
+
 // Track active text synchronization
 const textSync = {
     activeResultItem: null,
@@ -237,6 +311,14 @@ function loadAudio(placeholder) {
     const start = parseFloat(placeholder.dataset.start) || 0;
     const audioUrl = `/audio/${source}.${format}`;
     
+    // Log audio loading started
+    timingLogger.start('audio_loading', {
+        source_id: source,
+        start_time: start,
+        format: format,
+        is_source_audio: placeholder.classList.contains('source-audio-placeholder')
+    });
+    
     const audioContainer = document.createElement('div');
     audioContainer.className = 'audio-container';
     audioContainer.dataset.source = source;
@@ -264,9 +346,34 @@ function loadAudio(placeholder) {
     audio.appendChild(sourceElement);
     audioContainer.appendChild(audio);
     
-    // Set initial current time when metadata is loaded
+    // Log when metadata is loaded (basic loading complete)
     audio.addEventListener('loadedmetadata', function() {
         this.currentTime = start;
+        
+        // Log audio metadata loaded
+        timingLogger.end('audio_loading', {
+            source_id: source,
+            duration: this.duration,
+            start_time: start
+        });
+    });
+    
+    // Log when the entire audio is loaded
+    audio.addEventListener('canplaythrough', function() {
+        timingLogger.log('audio_loaded_fully', {
+            source_id: source,
+            duration: this.duration,
+            start_time: start
+        });
+    });
+    
+    // Log when playing starts
+    audio.addEventListener('play', function() {
+        timingLogger.log('audio_play_started', {
+            source_id: source,
+            current_time: this.currentTime,
+            is_source_audio: placeholder.classList.contains('source-audio-placeholder')
+        });
     });
     
     // Add play event to sync text when playing from main audio player
@@ -833,6 +940,11 @@ function toggleSource(sourceId) {
     const icon = document.getElementById('icon-' + sourceId);
     
     if (resultsDiv.style.display === 'none') {
+        // Log source results requested
+        timingLogger.start('source_results_open', {
+            source_id: sourceId
+        });
+        
         resultsDiv.style.display = 'block';
         icon.textContent = '▼';
         
@@ -865,7 +977,21 @@ function toggleSource(sourceId) {
         if (sourcePlaceholder && sourcePlaceholder.classList.contains('audio-placeholder')) {
             loadAudio(sourcePlaceholder);
         }
+        
+        // Log source results loaded
+        setTimeout(() => {
+            timingLogger.end('source_results_open', {
+                source_id: sourceId,
+                results_count: resultsDiv.querySelectorAll('.result-item').length,
+                has_segments: sourceSegments[sourceId] ? true : false
+            });
+        }, 200); // Small delay to ensure DOM is updated
     } else {
+        // Log source results closing
+        timingLogger.log('source_results_close', {
+            source_id: sourceId
+        });
+        
         resultsDiv.style.display = 'none';
         icon.textContent = '▶';
     }
@@ -873,6 +999,19 @@ function toggleSource(sourceId) {
 
 // Initialize segments data when the page loads
 document.addEventListener('DOMContentLoaded', function() {
+    // Initialize timing logger with request ID from server
+    const requestIdMeta = document.querySelector('meta[name="request-id"]');
+    if (requestIdMeta) {
+        timingLogger.init(requestIdMeta.getAttribute('content'));
+        console.log("Timing logger initialized with request ID:", requestIdMeta.getAttribute('content'));
+    }
+    
+    // Log page load event
+    timingLogger.log('results_page_loaded', {
+        url: window.location.href,
+        query: new URLSearchParams(window.location.search).get('q')
+    });
+    
     // For each source group, preload its segments data
     document.querySelectorAll('.source-group').forEach(group => {
         const sourceId = group.querySelector('.source-header').getAttribute('onclick').match(/'([^']+)'/)[1];
@@ -1094,6 +1233,10 @@ function checkForMoreResults() {
     // Store the start time of the progressive search if not already set
     if (!window.searchStartTime) {
         window.searchStartTime = Date.now();
+        // Log progressive search start
+        timingLogger.start('progressive_search', {
+            query: new URLSearchParams(window.location.search).get('q')
+        });
     }
     
     const searchParams = new URLSearchParams(window.location.search);
@@ -1102,6 +1245,13 @@ function checkForMoreResults() {
     const regex = searchParams.has('regex');
     const substring = searchParams.has('substring');
     const maxResults = parseInt(searchParams.get('max_results') || '100');
+    
+    // Log check for more results
+    timingLogger.log('search_progress_check', {
+        query: query,
+        page: page,
+        elapsed_ms: Date.now() - window.searchStartTime
+    });
     
     // Build API URL
     const apiUrl = `/search?q=${encodeURIComponent(query)}&page=${page}` + 
@@ -1134,6 +1284,13 @@ function checkForMoreResults() {
             
             // Calculate total search duration from our stored start time
             const totalDuration = Date.now() - window.searchStartTime;
+            
+            // Log search completion
+            timingLogger.end('progressive_search', {
+                total_results: data.pagination.total_results,
+                total_pages: data.pagination.total_pages,
+                request_id: data.stats.request_id
+            });
             
             // Update the search duration now that we have the final time
             const statsElement = document.querySelector('.stats');
@@ -1169,52 +1326,6 @@ function checkForMoreResults() {
         console.error('Error checking for more results:', error);
     });
 }
-
-// Initialize progressive loading if needed
-document.addEventListener('DOMContentLoaded', function() {
-    // Check if we're on a search results page
-    const searchParams = new URLSearchParams(window.location.search);
-    const query = searchParams.get('q');
-    
-    if (query) {
-        // Remove any top pagination and ensure only bottom pagination exists
-        ensureBottomPaginationContainer();
-        
-        // Remove the redundant results-count element at the bottom if it exists
-        const resultsCountElement = document.getElementById('results-count');
-        if (resultsCountElement && resultsCountElement.parentNode) {
-            resultsCountElement.parentNode.remove();
-        }
-        
-        // Remove any existing duration span to start fresh
-        const statsElement = document.querySelector('.stats');
-        if (statsElement) {
-            const durationSpan = statsElement.querySelector('.duration');
-            if (durationSpan) {
-                durationSpan.remove();
-            }
-        }
-        
-        // Check if progressive loading is enabled
-        const progressive = searchParams.has('progressive');
-        if (progressive) {
-            console.log("Starting progressive search checks");
-            // Start checking for more results
-            checkForMoreResults();
-        }
-    }
-    
-    // Add progressive parameter to search form
-    const searchForm = document.querySelector('.search-form');
-    if (searchForm && !searchForm.querySelector('input[name="progressive"]')) {
-        console.log("Adding progressive parameter to search form");
-        const progressiveInput = document.createElement('input');
-        progressiveInput.type = 'hidden';
-        progressiveInput.name = 'progressive';
-        progressiveInput.value = 'true';
-        searchForm.appendChild(progressiveInput);
-    }
-});
 
 // Lazy load audio players that are in the viewport
 function lazyLoadAudioPlayers() {
@@ -1315,4 +1426,50 @@ function setupStickyHeaderDetection() {
             stickyObserver.observe(group);
         });
     }
-} 
+}
+
+// Initialize progressive loading if needed
+document.addEventListener('DOMContentLoaded', function() {
+    // Check if we're on a search results page
+    const searchParams = new URLSearchParams(window.location.search);
+    const query = searchParams.get('q');
+    
+    if (query) {
+        // Remove any top pagination and ensure only bottom pagination exists
+        ensureBottomPaginationContainer();
+        
+        // Remove the redundant results-count element at the bottom if it exists
+        const resultsCountElement = document.getElementById('results-count');
+        if (resultsCountElement && resultsCountElement.parentNode) {
+            resultsCountElement.parentNode.remove();
+        }
+        
+        // Remove any existing duration span to start fresh
+        const statsElement = document.querySelector('.stats');
+        if (statsElement) {
+            const durationSpan = statsElement.querySelector('.duration');
+            if (durationSpan) {
+                durationSpan.remove();
+            }
+        }
+        
+        // Check if progressive loading is enabled
+        const progressive = searchParams.has('progressive');
+        if (progressive) {
+            console.log("Starting progressive search checks");
+            // Start checking for more results
+            checkForMoreResults();
+        }
+    }
+    
+    // Add progressive parameter to search form
+    const searchForm = document.querySelector('.search-form');
+    if (searchForm && !searchForm.querySelector('input[name="progressive"]')) {
+        console.log("Adding progressive parameter to search form");
+        const progressiveInput = document.createElement('input');
+        progressiveInput.type = 'hidden';
+        progressiveInput.name = 'progressive';
+        progressiveInput.value = 'true';
+        searchForm.appendChild(progressiveInput);
+    }
+}); 

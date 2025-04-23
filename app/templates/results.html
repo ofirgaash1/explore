@@ -4,6 +4,9 @@
 
 {% block head %}
 <link rel="stylesheet" href="{{ url_for('static', filename='css/results.css') }}">
+{% if request_id %}
+<meta name="request-id" content="{{ request_id }}">
+{% endif %}
 {% endblock %}
 
 {% block content %}
