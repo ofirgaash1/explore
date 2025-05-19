@@ -54,13 +54,27 @@ class IndexManager:
 # helper converts Kaldi-style or plain list JSON to a single string
 def _episode_to_string(data: dict | list) -> str:
     """
-    Accepts either:
-      • {'segments': [{'text': …}, …]}
-      • [{'start': …, 'text': …}, …]
-    Returns raw concatenation with spaces.
+    Return the full raw transcript as one space-separated string.
+
+    Accepted input shapes
+    ---------------------
+    1. {'text': "…"}                         ← fastest path
+    2. {'segments': [{'text': …}, …]}        (Kaldi / Whisper JSON)
+    3. [{'start': …, 'text': …}, …]          (plain list)
+
+    Raises ValueError if none of the patterns match.
     """
+    # --- 1️⃣  fastest: pre-baked full text ---------------------------------
+    if isinstance(data, dict) and isinstance(data.get("text"), str):
+        return data["text"]
+
+    # --- 2️⃣  Kaldi / Whisper style ----------------------------------------
     if isinstance(data, dict) and "segments" in data:
         segs = data["segments"]
-    else:
+    # --- 3️⃣  plain list ----------------------------------------------------
+    elif isinstance(data, list):
         segs = data
+    else:
+        raise ValueError("Unrecognised transcript JSON structure")
+
     return " ".join(seg["text"] for seg in segs)
