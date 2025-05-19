@@ -3,7 +3,7 @@ import io
 import csv
 from pydub import AudioSegment
 from ..services.file_service import FileService
-from ..services.search_service import SearchService
+from ..services.search import SearchService
 from ..services.analytics_service import track_performance
 import logging
 import time

@@ -1,6 +1,6 @@
 from app import create_app
 from app.services.file_service import FileService
-from app.services.search_service import SearchService
+from app.services.search import SearchService
 import time
 import logging
 import sys
@@ -26,7 +26,8 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.StreamHandler(sys.stdout)
+        logging.FileHandler('app.log'),
+        logging.StreamHandler(sys.stdout)  # Keep stdout for development/debugging
     ]
 )
 logger = logging.getLogger(__name__)

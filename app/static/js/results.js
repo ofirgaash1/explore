@@ -940,8 +940,8 @@ function toggleSource(sourceId) {
     const icon = document.getElementById('icon-' + sourceId);
     
     if (resultsDiv.style.display === 'none') {
-        // Log source results requested
-        timingLogger.start('source_results_open', {
+        // Log source section click timing
+        timingLogger.start('source_section_click_to_load', {
             source_id: sourceId
         });
         
@@ -978,17 +978,17 @@ function toggleSource(sourceId) {
             loadAudio(sourcePlaceholder);
         }
         
-        // Log source results loaded
+        // Log source section load completion
         setTimeout(() => {
-            timingLogger.end('source_results_open', {
+            timingLogger.end('source_section_click_to_load', {
                 source_id: sourceId,
                 results_count: resultsDiv.querySelectorAll('.result-item').length,
                 has_segments: sourceSegments[sourceId] ? true : false
             });
         }, 200); // Small delay to ensure DOM is updated
     } else {
-        // Log source results closing
-        timingLogger.log('source_results_close', {
+        // Log source section closing
+        timingLogger.log('source_section_close', {
             source_id: sourceId
         });
         
@@ -1472,4 +1472,11 @@ document.addEventListener('DOMContentLoaded', function() {
         progressiveInput.value = 'true';
         searchForm.appendChild(progressiveInput);
     }
+});
+
+// Add search form submit timing
+document.querySelector('.search-form').addEventListener('submit', function() {
+    timingLogger.start('search_click_to_results', {
+        query: this.querySelector('input[name="q"]').value
+    });
 }); 
