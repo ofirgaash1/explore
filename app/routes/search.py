@@ -2,7 +2,7 @@
 from __future__ import annotations
 from flask import Blueprint, request, jsonify, current_app, abort
 
-from app.services.search import SearchService
+from app.services.search import SearchService, SearchHit
 from app.services.index import IndexManager
 from app.services.file_service import FileService
 
@@ -37,3 +37,19 @@ def snippet():
         abort(404)
     txt = idx.text[epi]
     return jsonify({"text": txt[max(0, off - 10): off + size]})
+
+@bp.route("/segment", methods=["GET"])
+def get_segment():
+    try:
+        epi  = int(request.args["episode_idx"])
+        char = int(request.args["char_offset"])
+    except (KeyError, ValueError):
+        abort(400, "episode_idx & char_offset (int) are required")
+
+    hit = SearchHit(epi, char)
+    seg = _search_svc.segment(hit)
+    return jsonify({
+        "segment_index": seg.seg_idx,
+        "start_sec": seg.start_sec,
+        "text": seg.text,
+    })

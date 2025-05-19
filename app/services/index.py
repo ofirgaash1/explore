@@ -4,6 +4,7 @@ import json
 import threading
 from dataclasses import dataclass, field
 from typing import List
+from bisect import bisect_right
 
 from .file_service import FileService, FileRecord
 
@@ -12,6 +13,8 @@ from .file_service import FileService, FileRecord
 class TranscriptIndex:
     ids:  List[str] = field(default_factory=list)
     text: List[str] = field(default_factory=list)   # raw, full-episode string
+    seg_offsets: List[List[int]]       = field(default_factory=list)   
+    seg_times:   List[List[float]]     = field(default_factory=list)
 
 
 # ­­­­­­­­­­­­­­­­­­­­­­­­­­­­-------------------------------------------------- #
@@ -46,35 +49,65 @@ class IndexManager:
         for rec in self._file_svc.records():
             with rec.json_path.open(encoding="utf-8") as fh:
                 data = json.load(fh)
+            full, offs, tms = _episode_to_string_and_meta(data)
+
             idx.ids.append(rec.id)
-            idx.text.append(_episode_to_string(data))
+            idx.text.append(full)
+            idx.seg_offsets.append(offs)
+            idx.seg_times.append(tms)
         return idx
 
-
 # helper converts Kaldi-style or plain list JSON to a single string
-def _episode_to_string(data: dict | list) -> str:
+def _episode_to_string_and_meta(data: dict | list) -> tuple[str, list[int], list[float]]:
     """
-    Return the full raw transcript as one space-separated string.
-
-    Accepted input shapes
-    ---------------------
-    1. {'text': "…"}                         ← fastest path
-    2. {'segments': [{'text': …}, …]}        (Kaldi / Whisper JSON)
-    3. [{'start': …, 'text': …}, …]          (plain list)
-
-    Raises ValueError if none of the patterns match.
+    Returns:
+        full_text,  offsets[],  start_times[]
+    Offsets are char positions *within* full_text where each segment begins.
     """
-    # --- 1️⃣  fastest: pre-baked full text ---------------------------------
-    if isinstance(data, dict) and isinstance(data.get("text"), str):
-        return data["text"]
+    # # 1️⃣ fast path
+    # if isinstance(data, dict) and isinstance(data.get("text"), str):
+    #     full_text = data["text"]
 
-    # --- 2️⃣  Kaldi / Whisper style ----------------------------------------
+    # 2️⃣ segments list extraction
     if isinstance(data, dict) and "segments" in data:
         segs = data["segments"]
-    # --- 3️⃣  plain list ----------------------------------------------------
     elif isinstance(data, list):
         segs = data
     else:
         raise ValueError("Unrecognised transcript JSON structure")
 
-    return " ".join(seg["text"] for seg in segs)
+    offsets, times, parts = [], [], []
+    cursor = 0
+    for seg in segs:
+        offsets.append(cursor)
+        times.append(float(seg["start"]))
+        part = seg["text"]
+        parts.append(part)
+        cursor += len(part) + 1      # +1 for the space we’ll add below
+    full_text = " ".join(parts)
+    return full_text, offsets, times
+
+
+# ------------------------------------------------------------------ #
+@dataclass(slots=True, frozen=True)
+class Segment:
+    episode_idx: int
+    seg_idx: int
+    text: str
+    start_sec: float
+
+
+def segment_for_hit(index: TranscriptIndex, episode_idx: int,
+                    char_offset: int) -> Segment:
+    """O(log n) lookup of segment containing `char_offset`."""
+    offs = index.seg_offsets[episode_idx]
+    i = bisect_right(offs, char_offset) - 1
+    start_off = offs[i]
+    end_off = offs[i + 1] if i + 1 < len(offs) else len(index.text[episode_idx])
+
+    return Segment(
+        episode_idx=episode_idx,
+        seg_idx=i,
+        text=index.text[episode_idx][start_off:end_off].strip(),
+        start_sec=index.seg_times[episode_idx][i],
+    )

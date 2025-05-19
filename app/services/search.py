@@ -3,7 +3,7 @@ import re
 from dataclasses import dataclass
 from typing import List, Callable
 
-from .index import IndexManager, TranscriptIndex
+from .index import IndexManager, TranscriptIndex, segment_for_hit, Segment
 
 
 @dataclass(slots=True, frozen=True)
@@ -28,6 +28,10 @@ class SearchService:
                 hits.append(SearchHit(epi, pos))
         return hits
 
+    def segment(self, hit: SearchHit) -> Segment:
+        """Return the segment that contains this hit."""
+        idx = self._index_mgr.get()
+        return segment_for_hit(idx, hit.episode_idx, hit.char_offset)
 
 # ------------------------------------------------------------------ #
 def _make_matcher(pat: str, regex: bool) -> Callable[[str], List[int]]:
