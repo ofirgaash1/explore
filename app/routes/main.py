@@ -2,12 +2,12 @@ from flask import Blueprint, render_template, request, jsonify, current_app
 from ..services.search import SearchService
 from ..services.file_service import FileService
 from ..services.analytics_service import track_performance
-# from pydub import AudioSegment  # Commented out
 from ..routes.auth import login_required
 import time
 import os
 import logging
 import uuid
+from ..services.index import IndexManager
 
 logger = logging.getLogger(__name__)
 

@@ -76,9 +76,7 @@ def init_app(data_dir: str):
 @timeit("FileService scan")
 def init_file_service(json_dir: Path, audio_dir: Path):
     fs = FileService(transcripts_dir=json_dir)
-    print(audio_dir)
-    # print first 10 rec.ids from fs.records()
-    print([rec.id for rec in fs.records()[:10]])
+
     # build the mapping once at start-up
     available = {
         rec.id: {
@@ -124,6 +122,7 @@ with app.app_context():
     index_manager  = build_index(file_service, force=args.force_reindex)
     search_service = SearchService(index_manager)
 
+
     # expose to blueprints
     app.config["FILE_SERVICE"]   = file_service
     app.config["SEARCH_SERVICE"] = search_service
@@ -132,6 +131,7 @@ with app.app_context():
     from app.routes import main as main_bp
     main_bp.file_service   = file_service
     main_bp.search_service = search_service
+    
 
     # memory diagnostics (optional)
     try:
