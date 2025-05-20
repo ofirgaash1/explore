@@ -111,3 +111,17 @@ def segment_for_hit(index: TranscriptIndex, episode_idx: int,
         text=index.text[episode_idx][start_off:end_off].strip(),
         start_sec=index.seg_times[episode_idx][i],
     )
+
+def segment_by_idx(index: TranscriptIndex, episode_idx: int,
+                   seg_idx: int) -> Segment:
+    offs = index.seg_offsets[episode_idx]
+    if seg_idx < 0 or seg_idx >= len(offs):
+        raise IndexError("segment index out of bounds")
+    start_off = offs[seg_idx]
+    end_off = offs[seg_idx + 1] if seg_idx + 1 < len(offs) else len(index.text[episode_idx])
+    return Segment(
+        episode_idx=episode_idx,
+        seg_idx=seg_idx,
+        text=index.text[episode_idx][start_off:end_off].strip(),
+        start_sec=index.seg_times[episode_idx][seg_idx],
+    )

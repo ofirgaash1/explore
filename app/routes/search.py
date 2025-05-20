@@ -53,3 +53,17 @@ def get_segment():
         "start_sec": seg.start_sec,
         "text": seg.text,
     })
+
+    @bp.route("/segment/by_idx", methods=["GET"])
+    def get_segment_by_idx():
+        try:
+            epi  = int(request.args["episode_idx"])
+            idx  = int(request.args["seg_idx"])
+        except (KeyError, ValueError):
+            abort(400, "episode_idx & seg_idx (int) are required")
+
+        seg = _search_svc._index_mgr.get()  
+        seg = segment_by_idx(seg, epi, idx)
+        return jsonify({"segment_index": seg.seg_idx,
+                        "start_sec": seg.start_sec,
+                        "text": seg.text})

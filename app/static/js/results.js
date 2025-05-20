@@ -1,1482 +1,213 @@
-// Store all segments data for each source
-const sourceSegments = {};
+// results.js – lightweight client for Explore search results
+// ---------------------------------------------------------------
+// Assumptions
+//   • Every .result-item carries data attributes:
+//       data-source   recording_id (url‑encoded)
+//       data-epi      episode_idx (int)
+//       data-char     char_offset (int)
+//       data-seg      segment_idx (int)  – first segment (already known)
+//       data-start    start_sec   (float)
+//   • A single audio file per recording lives at /audio/<id>.opus
+//   • The server exposes:
+//       GET /search/segment?episode_idx&char_offset
+//       GET /search/segment/by_idx?episode_idx&seg_idx
+// ---------------------------------------------------------------
 
-// Timing utilities to track user interactions
-const timingLogger = {
+/* ========================
+   1 ‑ Timing instrumentation
+   ======================== */
+   const timingLogger = {
     timestamps: {},
     requestId: '',
 
-    // Initialize with request ID from server
-    init: function(requestId) {
-        this.requestId = requestId || '';
-        console.log(`Timing logger initialized with request ID: ${this.requestId}`);
+    init(requestId = '') {
+        this.requestId = requestId;
     },
-
-    // Start timing an event
-    start: function(eventName, data = {}) {
-        this.timestamps[eventName] = {
-            startTime: performance.now(),
-            data: data
-        };
-        console.log(`[TIMING] Started ${eventName}`, data);
+    start(ev, data = {}) {
+        this.timestamps[ev] = { t0: performance.now(), data };
     },
-
-    // End timing for an event and send to server
-    end: function(eventName, additionalData = {}) {
-        if (this.timestamps[eventName]) {
-            const endTime = performance.now();
-            const startTime = this.timestamps[eventName].startTime;
-            const duration = endTime - startTime;
-            
-            // Combine initial data with additional data
-            const data = {
-                ...this.timestamps[eventName].data,
-                ...additionalData,
-                duration_ms: duration,
-                request_id: this.requestId
-            };
-            
-            console.log(`[TIMING] Ended ${eventName}: ${duration.toFixed(2)}ms`, data);
-            
-            // Send to server
-            this.sendToServer(eventName, data);
-            
-            // Clean up
-            delete this.timestamps[eventName];
-            
-            return duration;
-        }
-        return null;
-    },
-    
-    // Log a single event (no duration)
-    log: function(eventName, data = {}) {
-        data.request_id = this.requestId;
-        console.log(`[TIMING] Event ${eventName}`, data);
-        this.sendToServer(eventName, data);
-    },
-    
-    // Send timing data to server
-    sendToServer: function(eventName, data) {
+    end(ev, extra = {}) {
+        const rec = this.timestamps[ev];
+        if (!rec) return 0;
+        const dur = performance.now() - rec.t0;
+        delete this.timestamps[ev];
+        const payload = { ...rec.data, ...extra, duration_ms: dur, request_id: this.requestId };
+        console.log(`[TIMING] ${ev} – ${dur.toFixed(1)} ms`, payload);
         fetch('/api/log-timing', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            },
-            body: JSON.stringify({
-                event_type: eventName,
-                data: data
-            }),
-            // Don't wait for response
-            keepalive: true
-        }).catch(error => {
-            console.error('Error sending timing data:', error);
-        });
-    }
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ event_type: ev, data: payload }), keepalive: true
+        }).catch(() => {});
+        return dur;
+    },
+    log(ev, data = {}) { this.end(ev, data); }
 };
 
-// Track active text synchronization
-const textSync = {
-    activeResultItem: null,
-    activeContextContainer: null,
-    currentSegmentIndex: -1,
-    
-    // Start tracking synchronization for a specific result item
-    start: function(resultItem, contextContainer, initialSegmentIndex) {
-        this.activeResultItem = resultItem;
-        this.activeContextContainer = contextContainer;
-        this.currentSegmentIndex = initialSegmentIndex;
-        
-        // Highlight the initial segment
-        this.highlightSegment(initialSegmentIndex);
-    },
-    
-    // Stop tracking
-    stop: function() {
-        if (this.activeContextContainer) {
-            // Remove all active highlights
-            this.activeContextContainer.querySelectorAll('.context-segment').forEach(segment => {
-                segment.classList.remove('active-segment');
-            });
-        }
-        
-        this.activeResultItem = null;
-        this.activeContextContainer = null;
-        this.currentSegmentIndex = -1;
-    },
-    
-    // Highlight a specific segment by index
-    highlightSegment: function(index) {
-        if (!this.activeContextContainer) return;
-        
-        // Remove existing highlights
-        this.activeContextContainer.querySelectorAll('.context-segment').forEach(segment => {
-            segment.classList.remove('active-segment');
-        });
-        
-        // Add highlight to the new segment
-        const segmentToHighlight = this.activeContextContainer.querySelector(`.context-segment[data-index="${index}"]`);
-        if (segmentToHighlight) {
-            segmentToHighlight.classList.add('active-segment');
-            
-            // Scroll the segment into view if needed
-            if (!isElementInViewport(segmentToHighlight)) {
-                segmentToHighlight.scrollIntoView({ behavior: 'smooth', block: 'center' });
-            }
-        }
-        
-        this.currentSegmentIndex = index;
-    },
-    
-    // Update highlight based on current audio time
-    updateHighlight: function(currentTime, segments) {
-        if (!segments || !this.activeContextContainer) return;
-        
-        // Find the current segment based on time
-        for (let i = 0; i < segments.length; i++) {
-            const segment = segments[i];
-            const nextSegment = segments[i + 1];
-            
-            // If this is the last segment or current time is between this segment's start and next segment's start
-            if (!nextSegment || (currentTime >= segment.start && currentTime < nextSegment.start)) {
-                if (i !== this.currentSegmentIndex) {
-                    this.highlightSegment(i);
-                }
-                break;
-            }
-        }
-    }
-};
-
-// Global audio manager to ensure only one audio plays at a time
+/* ========================
+   2 ‑ Audio single‑instance manager
+   ======================== */
 const audioManager = {
-    currentlyPlaying: null,
-    
-    // Register a new audio element
-    register: function(audio) {
+    current: null,
+    register(audio) {
         audio.addEventListener('play', () => {
-            // Stop any currently playing audio before playing the new one
-            if (this.currentlyPlaying && this.currentlyPlaying !== audio) {
-                this.currentlyPlaying.pause();
-                
-                // Stop text synchronization when audio changes
-                textSync.stop();
-            }
-            this.currentlyPlaying = audio;
+            if (this.current && this.current !== audio) this.current.pause();
+            this.current = audio;
         });
-        
-        audio.addEventListener('ended', () => {
-            if (this.currentlyPlaying === audio) {
-                this.currentlyPlaying = null;
-                
-                // Stop text synchronization when audio ends
-                textSync.stop();
-            }
-        });
-        
-        audio.addEventListener('pause', () => {
-            if (this.currentlyPlaying === audio) {
-                // Stop text synchronization when audio pauses
-                textSync.stop();
-            }
-        });
-        
+        audio.addEventListener('ended', () => { if (this.current === audio) this.current = null; });
+        audio.addEventListener('pause', () => { if (this.current === audio) this.current = null; });
         return audio;
     },
-    
-    // Stop the currently playing audio
-    stopAll: function() {
-        if (this.currentlyPlaying) {
-            this.currentlyPlaying.pause();
-            this.currentlyPlaying = null;
-            
-            // Stop text synchronization
-            textSync.stop();
-        }
-    }
+    stop() { if (this.current) this.current.pause(); }
 };
 
-// Audio loading queue and management
+/* ========================
+   3 ‑ Lazy audio loading queue
+   ======================== */
 const audioQueue = {
-    queue: [],
-    processing: false,
-    concurrentLoads: 3, // Maximum number of concurrent audio element loads
-    activeLoads: 0,
-    
-    // Add an audio placeholder to the queue
-    add: function(placeholder) {
-        // Don't add duplicate entries to the queue
-        const source = placeholder.dataset.source;
-        const start = placeholder.dataset.start;
-        const existingItem = this.queue.find(item => 
-            item.source === source && item.start === start);
-            
-        if (existingItem) return;
-        
-        this.queue.push({
-            placeholder: placeholder,
-            source: source,
-            start: start,
-            priority: this.isInViewport(placeholder) ? 1 : 0 // Prioritize visible elements
-        });
-        
-        // Sort queue by priority (higher priority first)
-        this.queue.sort((a, b) => b.priority - a.priority);
-        
-        // Start processing if not already running
-        if (!this.processing) {
-            this.processQueue();
-        }
+    q: [], active: 0, max: 3,
+    add(ph) {
+        if (!ph || !ph.isConnected) return;
+        this.q.push(ph); this.tick();
     },
-    
-    // Process the next items in the queue
-    processQueue: function() {
-        if (this.queue.length === 0) {
-            this.processing = false;
-            return;
-        }
-        
-        this.processing = true;
-        
-        // Process items while we have capacity and queue items
-        while (this.activeLoads < this.concurrentLoads && this.queue.length > 0) {
-            const item = this.queue.shift();
-            this.activeLoads++;
-            
-            // Check if the placeholder still exists in DOM and hasn't been replaced
-            if (item.placeholder.isConnected && item.placeholder.classList.contains('audio-placeholder')) {
-                const audio = loadAudio(item.placeholder);
-                
-                // When this audio is loaded, process the next item
-                audio.addEventListener('loadedmetadata', () => {
-                    this.activeLoads--;
-                    // Continue processing queue
-                    setTimeout(() => this.processQueue(), 0);
-                });
-                
-                // Also handle errors to ensure queue continues
-                audio.addEventListener('error', () => {
-                    console.error("Error loading audio:", item.source);
-                    this.activeLoads--;
-                    // Continue processing queue
-                    setTimeout(() => this.processQueue(), 0);
-                });
-            } else {
-                // If placeholder no longer exists, decrement counter and continue
-                this.activeLoads--;
-                setTimeout(() => this.processQueue(), 0);
-            }
-        }
-    },
-    
-    // Check if an element is in the viewport
-    isInViewport: function(element) {
-        const rect = element.getBoundingClientRect();
-        return (
-            rect.top >= 0 &&
-            rect.left >= 0 &&
-            rect.bottom <= (window.innerHeight || document.documentElement.clientHeight) &&
-            rect.right <= (window.innerWidth || document.documentElement.clientWidth)
-        );
-    },
-    
-    // Reset the queue
-    reset: function() {
-        this.queue = [];
-        this.activeLoads = 0;
-        this.processing = false;
+    tick() {
+        if (this.active >= this.max || !this.q.length) return;
+        const ph = this.q.shift();
+        this.active++;
+        const audio = loadAudio(ph);
+        audio.addEventListener('loadedmetadata', () => { this.active--; this.tick(); });
+        audio.addEventListener('error',           () => { this.active--; this.tick(); });
     }
 };
-
-// Initialize segments data from server
-function initializeSourceSegments(source, jsonPath) {
-    fetch(jsonPath)
-        .then(response => response.json())
-        .then(data => {
-            if (data && data.segments) {
-                sourceSegments[source] = data.segments;
-                
-                // After loading segments, update all result items for this source to show context
-                document.querySelectorAll(`.result-item[data-source="${source}"]`).forEach(item => {
-                    addContextToResult(item);
-                });
-            }
-        })
-        .catch(error => console.error('Error loading segments:', error));
-}
 
 function loadAudio(placeholder) {
-    const source = placeholder.dataset.source;
-    const format = placeholder.dataset.format;
+    const srcId = placeholder.dataset.source;
+    const fmt   = placeholder.dataset.format || 'opus';
     const start = parseFloat(placeholder.dataset.start) || 0;
-    const audioUrl = `/audio/${source}.${format}`;
-    
-    // Log audio loading started
-    timingLogger.start('audio_loading', {
-        source_id: source,
-        start_time: start,
-        format: format,
-        is_source_audio: placeholder.classList.contains('source-audio-placeholder')
+    const audioUrl = `/audio/${srcId}.${fmt}#t=${start}`;
+
+    timingLogger.start('audio_loading', { source_id: srcId, start_time: start });
+
+    const cont  = document.createElement('div'); cont.className = 'audio-container';
+    const audio = document.createElement('audio'); audio.controls = true; audio.preload = 'metadata';
+    const src   = document.createElement('source'); src.src = audioUrl;
+    src.type = fmt === 'opus' ? 'audio/ogg; codecs=opus' : fmt === 'mp3' ? 'audio/mpeg' : `audio/${fmt}`;
+    audio.appendChild(src); cont.appendChild(audio); placeholder.replaceWith(cont);
+
+    audio.addEventListener('loadedmetadata', () => timingLogger.end('audio_loading'));
+    audioManager.register(audio);
+    return audio;
+}
+
+/* ========================
+   4 ‑ Segment fetch helpers
+   ======================== */
+const segmentCache = {};   // key = `${epi}|${idx}`
+
+function fetchSegmentByChar(epi, charOff) {
+    return fetch(`/search/segment?episode_idx=${epi}&char_offset=${charOff}`)
+            .then(r => r.json());
+}
+function fetchSegmentByIdx(epi, idx) {
+    const k = `${epi}|${idx}`;
+    if (segmentCache[k]) return Promise.resolve(segmentCache[k]);
+    return fetch(`/search/segment/by_idx?episode_idx=${epi}&seg_idx=${idx}`)
+           .then(r => r.json())
+           .then(j => (segmentCache[k] = j));
+}
+
+/* ========================
+   5 ‑ Text highlighting utils
+   ======================== */
+const queryTerm = new URLSearchParams(window.location.search).get('q') || '';
+function highlightQuery(txt) {
+    if (!queryTerm) return txt;
+    const escaped = queryTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    return txt.replace(new RegExp(`(${escaped})`, 'gi'), '<strong>$1</strong>');
+}
+
+/* ========================
+   6 ‑ Build context & navigation
+   ======================== */
+function buildContext(resultItem, seg) {
+    let curIdx = seg.segment_index;
+
+    const ctx = document.createElement('div');
+    ctx.className = 'context-container';
+    ctx.innerHTML = renderSegment(seg);
+    resultItem.querySelector('.result-text-container').replaceChildren(ctx);
+
+    ctx.querySelector('.context-segment').addEventListener('click', e => {
+        playFromSourceAudio(resultItem.dataset.source, e.target.dataset.start);
     });
-    
-    const audioContainer = document.createElement('div');
-    audioContainer.className = 'audio-container';
-    audioContainer.dataset.source = source;
-    
-    // Create audio element
-    const audio = document.createElement('audio');
-    audio.controls = true;
-    audio.preload = "metadata";
-    audio.dataset.currentTime = start;
-    
-    const sourceElement = document.createElement('source');
-    sourceElement.src = `${audioUrl}#t=${start}`;
-    
-    // Set the correct MIME type based on format
-    if (format === 'opus') {
-        sourceElement.type = 'audio/ogg; codecs=opus';  // Correct MIME type for Opus
-    } else if (format === 'ogg') {
-        sourceElement.type = 'audio/ogg';
-    } else if (format === 'mp3') {
-        sourceElement.type = 'audio/mpeg';
-    } else {
-        sourceElement.type = `audio/${format}`;
-    }
-    
-    audio.appendChild(sourceElement);
-    audioContainer.appendChild(audio);
-    
-    // Log when metadata is loaded (basic loading complete)
-    audio.addEventListener('loadedmetadata', function() {
-        this.currentTime = start;
-        
-        // Log audio metadata loaded
-        timingLogger.end('audio_loading', {
-            source_id: source,
-            duration: this.duration,
-            start_time: start
-        });
-    });
-    
-    // Log when the entire audio is loaded
-    audio.addEventListener('canplaythrough', function() {
-        timingLogger.log('audio_loaded_fully', {
-            source_id: source,
-            duration: this.duration,
-            start_time: start
-        });
-    });
-    
-    // Log when playing starts
-    audio.addEventListener('play', function() {
-        timingLogger.log('audio_play_started', {
-            source_id: source,
-            current_time: this.currentTime,
-            is_source_audio: placeholder.classList.contains('source-audio-placeholder')
-        });
-    });
-    
-    // Add play event to sync text when playing from main audio player
-    if (placeholder.classList.contains('source-audio-placeholder')) {
-        // Store the source information before the placeholder is replaced
-        const sourceId = decodeURIComponent(source);
-        
-        audio.addEventListener('play', function() {
-            console.log("Main audio player started, initializing text sync");
-            
-            // Find the source group that contains this audio player
-            const sourceGroup = audioContainer.closest('.source-group');
-            if (!sourceGroup) {
-                console.log("Cannot find source group");
-                return;
-            }
-            
-            // Ensure the results are visible
-            const sourceResults = sourceGroup.querySelector('.source-results');
-            if (sourceResults && sourceResults.style.display === 'none') {
-                console.log("Expanding source results for sync");
-                // If results are hidden, show them first
-                toggleSource(sourceId);
-            }
-            
-            // Get segments for this source
-            const segments = sourceSegments[sourceId];
-            if (!segments) {
-                console.log("No segments found for source:", sourceId);
-                // If segments aren't loaded yet, try to load them
-                if (!sourceSegments[sourceId]) {
-                    console.log("Attempting to load segments");
-                    const jsonPath = `/export/source/${encodeURIComponent(sourceId)}?type=json`;
-                    initializeSourceSegments(sourceId, jsonPath);
-                    // Return and wait for segments to load
-                    return;
-                }
-                return;
-            }
-            
-            // Find the result items for this source
-            const resultItems = sourceResults.querySelectorAll('.result-item');
-            if (resultItems.length === 0) {
-                console.log("No result items found");
-                return;
-            }
-            
-            // Get the current time from the audio player
-            const currentTime = this.currentTime;
-            console.log("Current audio time:", currentTime);
-            
-            // Find the segment index closest to current play time
-            let closestSegmentIndex = -1;
-            let minTimeDiff = Number.MAX_VALUE;
-            
-            segments.forEach((segment, index) => {
-                const timeDiff = Math.abs(segment.start - currentTime);
-                if (timeDiff < minTimeDiff) {
-                    minTimeDiff = timeDiff;
-                    closestSegmentIndex = index;
-                }
+    ctx.querySelector('.prev-btn').addEventListener('click', () => shift(-1));
+    ctx.querySelector('.next-btn').addEventListener('click', () => shift(+1));
+
+    function shift(delta) {
+        const next = curIdx + delta;
+        fetchSegmentByIdx(resultItem.dataset.epi, next).then(s => {
+            curIdx = s.segment_index;
+            ctx.innerHTML = renderSegment(s);
+            ctx.querySelector('.context-segment').addEventListener('click', e => {
+                playFromSourceAudio(resultItem.dataset.source, e.target.dataset.start);
             });
-            
-            if (closestSegmentIndex === -1) {
-                console.log("Could not find matching segment");
-                return;
-            }
-            
-            console.log("Found closest segment:", closestSegmentIndex, "with start time:", segments[closestSegmentIndex].start);
-            
-            // Find the result item that contains this segment time
-            let targetResultItem = null;
-            let targetContextContainer = null;
-            
-            for (let i = 0; i < resultItems.length; i++) {
-                const resultItem = resultItems[i];
-                const itemStartTime = parseFloat(resultItem.dataset.start);
-                // If this result item has a start time close to our segment
-                if (Math.abs(itemStartTime - segments[closestSegmentIndex].start) < 0.5) {
-                    targetResultItem = resultItem;
-                    targetContextContainer = resultItem.querySelector('.context-container');
-                    break;
-                }
-            }
-            
-            // If we couldn't find an exact match, use the first result item
-            if (!targetResultItem) {
-                console.log("Using first result item as fallback");
-                targetResultItem = resultItems[0];
-                targetContextContainer = targetResultItem.querySelector('.context-container');
-                
-                // If context container doesn't exist yet, try adding it
-                if (!targetContextContainer) {
-                    console.log("Adding context to result item");
-                    addContextToResult(targetResultItem);
-                    targetContextContainer = targetResultItem.querySelector('.context-container');
-                }
-            }
-            
-            if (!targetContextContainer) {
-                console.log("No context container found");
-                return;
-            }
-            
-            console.log("Starting text sync with segment", closestSegmentIndex);
-            // Start text synchronization
-            textSync.start(targetResultItem, targetContextContainer, closestSegmentIndex);
-            
-            // Update text highlighting as audio plays
-            const updateHandler = function() {
-                if (segments) {
-                    textSync.updateHighlight(this.currentTime, segments);
-                }
-            };
-            
-            // Remove any existing timeupdate handlers to avoid duplicates
-            this.removeEventListener('timeupdate', updateHandler);
-            this.addEventListener('timeupdate', updateHandler);
         });
     }
-    
-    placeholder.replaceWith(audioContainer);
-    
-    // Register with audio manager to ensure only one plays at a time
-    return audioManager.register(audio);
-}
 
-// Function to play from specific timestamp in source header audio
-function playFromSourceAudio(source, timestamp) {
-    // Find the source header audio element
-    const sourceHeader = document.querySelector(`.source-group .source-header .audio-container[data-source="${encodeURIComponent(source)}"]`);
-    if (!sourceHeader) return;
-    
-    const audio = sourceHeader.querySelector('audio');
-    if (!audio) return;
-    
-    // Stop any currently playing audio
-    audioManager.stopAll();
-    
-    // Update current time and play
-    audio.currentTime = parseFloat(timestamp);
-    audio.play();
-}
-
-function formatTime(seconds) {
-    // Handle hours if needed
-    if (seconds >= 3600) {
-        const hours = Math.floor(seconds / 3600);
-        const minutes = Math.floor((seconds % 3600) / 60);
-        const remainingSeconds = Math.floor(seconds % 60);
-        return `${hours}:${minutes.toString().padStart(2, '0')}:${remainingSeconds.toString().padStart(2, '0')}`;
-    } else {
-        // Original minutes:seconds format
-        const minutes = Math.floor(seconds / 60);
-        const remainingSeconds = Math.floor(seconds % 60);
-        return `${minutes}:${remainingSeconds.toString().padStart(2, '0')}`;
+    function renderSegment(s) {
+        return `<button class="prev-btn" title="קודם">▲</button>
+                <span class="context-segment current-segment"
+                      data-start="${s.start_sec}" data-seg="${s.segment_index}">
+                    ${highlightQuery(s.text)}
+                </span>
+                <button class="next-btn" title="הבא">▼</button>`;
     }
 }
 
-function findSegmentIndex(time, segments) {
-    return segments.findIndex(seg => Math.abs(seg.start - parseFloat(time)) < 0.1);
+/* ========================
+   7 ‑ Audio helper to seek header player
+   ======================== */
+function playFromSourceAudio(sourceId, startSec) {
+    const headerAudio = document.querySelector(`.source-header .audio-container[data-source="${encodeURIComponent(sourceId)}"] audio`);
+    if (!headerAudio) return;
+    audioManager.stop();
+    headerAudio.currentTime = parseFloat(startSec);
+    headerAudio.play();
 }
 
-function addContextToResult(resultItem) {
-    const source = decodeURIComponent(resultItem.dataset.source);
-    const start = parseFloat(resultItem.dataset.start);
-    const query = document.querySelector('input[name="q"]').value.toLowerCase();
-    
-    // Get segments for this source
-    const segments = sourceSegments[source];
-    if (!segments) {
-        return; // Segments not loaded yet
-    }
-    
-    // Find current segment index
-    const currentIndex = findSegmentIndex(start, segments);
-    if (currentIndex === -1) return;
-    
-    // Get context segments (6 before, current, 6 after) to create a passage
-    const contextRange = 6; // Doubled from 3 to 6 segments before and after current
-    const startIdx = Math.max(0, currentIndex - contextRange);
-    const endIdx = Math.min(segments.length - 1, currentIndex + contextRange);
-    
-    // Create context HTML
-    let contextHtml = '';
-    
-    // Add segments as a continuous passage
-    for (let i = startIdx; i <= endIdx; i++) {
-        const segment = segments[i];
-        let segmentClass = '';
-        
-        if (i < currentIndex) {
-            segmentClass = 'prev-segment';
-        } else if (i === currentIndex) {
-            segmentClass = 'current-segment';
-        } else {
-            segmentClass = 'next-segment';
-        }
-        
-        // For the current segment, highlight the query text if it exists
-        let segmentText = segment.text;
-        if (i === currentIndex && query) {
-            // Escape special regex characters in the query
-            const escapedQuery = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-            // Create a regex that matches the query with word boundaries (if possible)
-            const regex = new RegExp(`(${escapedQuery})`, 'gi');
-            segmentText = segmentText.replace(regex, '<strong>$1</strong>');
-        }
-        
-        contextHtml += `<span class="context-segment ${segmentClass}" data-start="${segment.start}" data-index="${i}">${segmentText}</span>`;
-        
-        // Add a small separator between segments
-        if (i < endIdx) {
-            contextHtml += ' ';
-        }
-    }
-    
-    // Update the result text
-    const textContainer = resultItem.querySelector('.result-text-container');
-    const resultText = resultItem.querySelector('.result-text');
-    
-    // Create context scroller controls - more minimal now
-    const scrollerControls = document.createElement('div');
-    scrollerControls.className = 'context-scroller';
-    scrollerControls.innerHTML = `
-        <span class="scroller-position">קטע ${currentIndex + 1} מתוך ${segments.length}</span>
-        <button class="scroller-btn" data-direction="up" title="לקטעים מוקדמים יותר">▲</button>
-        <button class="scroller-btn" data-direction="down" title="לקטעים בהמשך">▼</button>
-    `;
-    
-    // Replace the single result text with the context container
-    const contextContainer = document.createElement('div');
-    contextContainer.className = 'context-container';
-    contextContainer.innerHTML = contextHtml;
-    
-    // Add click event listeners to segments for audio playback
-    contextContainer.querySelectorAll('.context-segment').forEach(segment => {
-        segment.addEventListener('click', function() {
-            // Find the parent source group of this result item
-            const sourceGroup = resultItem.closest('.source-group');
-            if (!sourceGroup) return;
-            
-            // Find the audio player in THIS source group's header
-            const sourceHeader = sourceGroup.querySelector('.source-header');
-            const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
-            
-            if (audio) {
-                // Stop any currently playing audio
-                audioManager.stopAll();
-                
-                // Get the segment index
-                const segmentIndex = parseInt(this.dataset.index);
-                
-                // Start text synchronization
-                textSync.start(resultItem, contextContainer, segmentIndex);
-                
-                // Set up timeupdate event for this audio to track current segment
-                audio.addEventListener('timeupdate', function() {
-                    // Get the current time from audio
-                    const currentTime = this.currentTime;
-                    
-                    // Get segments for this source
-                    const source = decodeURIComponent(resultItem.dataset.source);
-                    const segments = sourceSegments[source];
-                    
-                    // Update text highlighting based on current time
-                    textSync.updateHighlight(currentTime, segments);
-                });
-                
-                // Play the segment using the source header audio
-                audio.currentTime = parseFloat(this.dataset.start);
-                audio.play();
-                
-                // Update export link
-                const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
-                if (exportLink) {
-                    exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
-                }
-            } else {
-                // Fallback to the old method
-                playSegmentAudio(resultItem, this.dataset.start, source);
-            }
+/* ========================
+   8 ‑ Result‑item click binding
+   ======================== */
+document.addEventListener('DOMContentLoaded', () => {
+    // timing logger init
+    const rq = document.querySelector('meta[name="request-id"]');
+    if (rq) timingLogger.init(rq.content);
+
+    // bind result clicks
+    document.querySelectorAll('.result-item').forEach(item => {
+        item.addEventListener('click', function () {
+            if (this.dataset.ctxLoaded === '1') return;
+            const epi  = this.dataset.epi;
+            const char = this.dataset.char;
+            fetchSegmentByChar(epi, char).then(seg => {
+                buildContext(this, seg);
+                this.dataset.ctxLoaded = '1';
+            });
         });
     });
-    
-    // Add event listeners to scroller buttons
-    scrollerControls.querySelectorAll('.scroller-btn').forEach(btn => {
-        btn.addEventListener('click', function() {
-            scrollContext(resultItem, this.dataset.direction);
-        });
-    });
-    
-    // Store the current index in the result item for reference
-    resultItem.dataset.currentIndex = currentIndex;
-    
-    // Replace the text with the context container and scroller
-    if (resultText) {
-        resultText.replaceWith(contextContainer);
-        textContainer.insertBefore(scrollerControls, textContainer.firstChild);
-    } else {
-        // If we're updating an existing context view
-        const existingContext = textContainer.querySelector('.context-container');
-        const existingScroller = textContainer.querySelector('.context-scroller');
-        
-        if (existingContext) {
-            existingContext.innerHTML = contextHtml;
-            
-            // Re-add click event listeners to segments
-            existingContext.querySelectorAll('.context-segment').forEach(segment => {
-                segment.addEventListener('click', function() {
-                    // Find the parent source group of this result item
-                    const sourceGroup = resultItem.closest('.source-group');
-                    if (!sourceGroup) return;
-                    
-                    // Find the audio player in THIS source group's header
-                    const sourceHeader = sourceGroup.querySelector('.source-header');
-                    const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
-                    
-                    if (audio) {
-                        // Stop any currently playing audio
-                        audioManager.stopAll();
-                        
-                        // Get the segment index
-                        const segmentIndex = parseInt(this.dataset.index);
-                        
-                        // Start text synchronization
-                        textSync.start(resultItem, existingContext, segmentIndex);
-                        
-                        // Set up timeupdate event for this audio to track current segment
-                        audio.addEventListener('timeupdate', function() {
-                            // Get the current time from audio
-                            const currentTime = this.currentTime;
-                            
-                            // Get segments for this source
-                            const source = decodeURIComponent(resultItem.dataset.source);
-                            const segments = sourceSegments[source];
-                            
-                            // Update text highlighting based on current time
-                            textSync.updateHighlight(currentTime, segments);
-                        });
-                        
-                        // Play the segment using the source header audio
-                        audio.currentTime = parseFloat(this.dataset.start);
-                        audio.play();
-                        
-                        // Update export link
-                        const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
-                        if (exportLink) {
-                            exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${this.dataset.start}&duration=10`;
-                        }
-                    } else {
-                        // Fallback to the old method
-                        playSegmentAudio(resultItem, this.dataset.start, source);
-                    }
-                });
-            });
-        } else {
-            textContainer.appendChild(contextContainer);
-        }
-        
-        if (existingScroller) {
-            existingScroller.querySelector('.scroller-position').textContent = 
-                `קטע ${currentIndex + 1} מתוך ${segments.length}`;
-        } else {
-            textContainer.insertBefore(scrollerControls, textContainer.firstChild);
-        }
-    }
-}
 
-function playSegmentAudio(resultItem, startTime, source) {
-    // Update the export segment link
-    const exportLink = resultItem.querySelector('.btn-export[href*="export/segment"]');
-    if (exportLink) {
-        exportLink.href = `/export/segment/${encodeURIComponent(source)}?start=${startTime}&duration=10`;
-    }
-    
-    // Find the parent source group of this result item
-    const sourceGroup = resultItem.closest('.source-group');
-    if (!sourceGroup) return;
-    
-    // Find the audio player in THIS source group's header
-    const sourceHeader = sourceGroup.querySelector('.source-header');
-    const audio = sourceHeader ? sourceHeader.querySelector('audio') : null;
-    
-    // Find the context container for text synchronization
-    const contextContainer = resultItem.querySelector('.context-container');
-    if (!contextContainer) return;
-    
-    // Find segment index based on start time
-    const segments = sourceSegments[source];
-    if (!segments) return;
-    
-    const segmentIndex = segments.findIndex(seg => 
-        Math.abs(parseFloat(seg.start) - parseFloat(startTime)) < 0.1);
-    
-    if (segmentIndex === -1) return;
-    
-    if (audio) {
-        // Stop any currently playing audio
-        audioManager.stopAll();
-        
-        // Start text synchronization
-        textSync.start(resultItem, contextContainer, segmentIndex);
-        
-        // Set up timeupdate event for this audio to track current segment
-        audio.addEventListener('timeupdate', function() {
-            // Get the current time from audio
-            const currentTime = this.currentTime;
-            // Update text highlighting based on current time
-            textSync.updateHighlight(currentTime, segments);
-        });
-        
-        // If we found the audio in the source header, use it
-        audio.currentTime = parseFloat(startTime);
-        audio.play();
-    } else {
-        // Fallback to the old method (using result item's audio)
-        const audioPlaceholder = resultItem.querySelector('.audio-placeholder');
-        if (audioPlaceholder) {
-            // Stop any currently playing audio
-            audioManager.stopAll();
-            
-            // If we still have a placeholder, update its data and load the audio
-            audioPlaceholder.dataset.start = startTime;
-            const audio = loadAudio(audioPlaceholder);
-            
-            // Start text synchronization
-            textSync.start(resultItem, contextContainer, segmentIndex);
-            
-            // Set up timeupdate event for this audio
-            audio.addEventListener('timeupdate', function() {
-                // Get the current time from audio
-                const currentTime = this.currentTime;
-                // Update text highlighting based on current time
-                textSync.updateHighlight(currentTime, segments);
-            });
-            
-            audio.play();
-        } else {
-            // If we already have an audio element, update its source
-            const audio = resultItem.querySelector('audio');
-            if (audio) {
-                // Stop any currently playing audio
-                audioManager.stopAll();
-                
-                // Start text synchronization
-                textSync.start(resultItem, contextContainer, segmentIndex);
-                
-                // Set up timeupdate event for this audio
-                audio.addEventListener('timeupdate', function() {
-                    // Get the current time from audio
-                    const currentTime = this.currentTime;
-                    // Update text highlighting based on current time
-                    textSync.updateHighlight(currentTime, segments);
-                });
-                
-                const sourceElement = audio.querySelector('source');
-                const format = sourceElement.type.split('/')[1];
-                const newSrc = `/audio/${encodeURIComponent(source)}.${format}#t=${startTime}`;
-
-                if (audio.src !== newSrc) {
-                    audio.src = newSrc;
-                    audio.load();
-                }
-                audio.play();
-            }
-        }
-    }
-}
-
-function scrollContext(resultItem, direction) {
-    const source = decodeURIComponent(resultItem.dataset.source);
-    const currentIndex = parseInt(resultItem.dataset.currentIndex);
-    
-    // Get segments for this source
-    const segments = sourceSegments[source];
-    if (!segments) return;
-    
-    // Calculate new index based on direction
-    // For continuous passage, we move 6 segments at a time (doubled from 3)
-    const scrollAmount = 6;
-    let newIndex;
-    
-    if (direction === 'up') {
-        // Move up by scroll amount
-        newIndex = Math.max(0, currentIndex - scrollAmount);
-    } else {
-        // Move down by scroll amount
-        newIndex = Math.min(segments.length - 1, currentIndex + scrollAmount);
-    }
-    
-    // If we're already at the limit, don't do anything
-    if (newIndex === currentIndex) return;
-    
-    // Update the data attribute for the result item
-    resultItem.dataset.currentIndex = newIndex;
-    resultItem.dataset.start = segments[newIndex].start;
-    
-    // Update the context display
-    addContextToResult(resultItem);
-    
-    // Optionally, scroll to the newly displayed content
-    resultItem.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-}
-
-function prevSegment(button) {
-    // Navigate up to the result-item from the button
-    const resultItem = button.closest('.result-item');
-    
-    // Get source and current index
-    const source = decodeURIComponent(resultItem.dataset.source);
-    const currentIndex = parseInt(resultItem.dataset.currentIndex);
-    
-    // Get segments for this source
-    const segments = sourceSegments[source];
-    if (!segments) {
-        // If segments aren't loaded yet, try to load them from the server
-        const jsonPath = `/export/source/${encodeURIComponent(source)}?type=json`;
-        initializeSourceSegments(source, jsonPath);
-        return;
-    }
-    
-    // If we found the current segment and it's not the first one
-    if (currentIndex > 0) {
-        const prevSegment = segments[currentIndex - 1];
-        updateSegmentContext(resultItem, prevSegment, source);
-    }
-}
-
-function nextSegment(button) {
-    // Navigate up to the result-item from the button
-    const resultItem = button.closest('.result-item');
-    
-    // Get source and current index
-    const source = decodeURIComponent(resultItem.dataset.source);
-    const currentIndex = parseInt(resultItem.dataset.currentIndex);
-    
-    // Get segments for this source
-    const segments = sourceSegments[source];
-    if (!segments) {
-        // If segments aren't loaded yet, try to load them from the server
-        const jsonPath = `/export/source/${encodeURIComponent(source)}?type=json`;
-        initializeSourceSegments(source, jsonPath);
-        return;
-    }
-    
-    // If we found the current segment and it's not the last one
-    if (currentIndex < segments.length - 1) {
-        const nextSegment = segments[currentIndex + 1];
-        updateSegmentContext(resultItem, nextSegment, source);
-    }
-}
-
-function updateSegmentContext(resultItem, segment, source) {
-    // Update the data attribute for the result item
-    resultItem.dataset.start = segment.start;
-    
-    // Update the context display only
-    addContextToResult(resultItem);
-}
-
-function toggleSource(sourceId) {
-    const resultsDiv = document.getElementById(sourceId + '-results');
-    const icon = document.getElementById('icon-' + sourceId);
-    
-    if (resultsDiv.style.display === 'none') {
-        // Log source section click timing
-        timingLogger.start('source_section_click_to_load', {
-            source_id: sourceId
-        });
-        
-        resultsDiv.style.display = 'block';
-        icon.textContent = '▼';
-        
-        // Setup lazy loading for audio players instead of loading all at once
-        if ('IntersectionObserver' in window && window.audioObserver) {
-            // Observe new placeholders
-            resultsDiv.querySelectorAll('.audio-placeholder').forEach(placeholder => {
-                window.audioObserver.observe(placeholder);
-            });
-        } else {
-            // For older browsers, add visible items to the queue
-            setTimeout(() => {
-                const visiblePlaceholders = Array.from(resultsDiv.querySelectorAll('.audio-placeholder'))
-                    .filter(placeholder => audioQueue.isInViewport(placeholder));
-                
-                visiblePlaceholders.forEach(placeholder => {
-                    audioQueue.add(placeholder);
-                });
-            }, 100);
-        }
-        
-        // Load segments data for navigation if not already loaded
-        if (!sourceSegments[sourceId]) {
-            const jsonPath = `/export/source/${encodeURIComponent(sourceId)}?type=json`;
-            initializeSourceSegments(sourceId, jsonPath);
-        }
-        
-        // Load source header audio player
-        const sourcePlaceholder = document.querySelector(`.source-header .audio-placeholder[data-source="${encodeURIComponent(sourceId)}"]`);
-        if (sourcePlaceholder && sourcePlaceholder.classList.contains('audio-placeholder')) {
-            loadAudio(sourcePlaceholder);
-        }
-        
-        // Log source section load completion
-        setTimeout(() => {
-            timingLogger.end('source_section_click_to_load', {
-                source_id: sourceId,
-                results_count: resultsDiv.querySelectorAll('.result-item').length,
-                has_segments: sourceSegments[sourceId] ? true : false
-            });
-        }, 200); // Small delay to ensure DOM is updated
-    } else {
-        // Log source section closing
-        timingLogger.log('source_section_close', {
-            source_id: sourceId
-        });
-        
-        resultsDiv.style.display = 'none';
-        icon.textContent = '▶';
-    }
-}
-
-// Initialize segments data when the page loads
-document.addEventListener('DOMContentLoaded', function() {
-    // Initialize timing logger with request ID from server
-    const requestIdMeta = document.querySelector('meta[name="request-id"]');
-    if (requestIdMeta) {
-        timingLogger.init(requestIdMeta.getAttribute('content'));
-        console.log("Timing logger initialized with request ID:", requestIdMeta.getAttribute('content'));
-    }
-    
-    // Log page load event
-    timingLogger.log('results_page_loaded', {
-        url: window.location.href,
-        query: new URLSearchParams(window.location.search).get('q')
-    });
-    
-    // For each source group, preload its segments data
-    document.querySelectorAll('.source-group').forEach(group => {
-        const sourceId = group.querySelector('.source-header').getAttribute('onclick').match(/'([^']+)'/)[1];
-        const jsonPath = `/export/source/${encodeURIComponent(sourceId)}?type=json`;
-        initializeSourceSegments(sourceId, jsonPath);
-    });
-    
-    // Setup lazy loading for audio placeholders
+    // lazy load header audios that are visible on initial paint
     setupLazyLoading();
-    
-    // Handle window resize events for lazy loading visible audio
-    window.addEventListener('resize', debounce(() => {
-        lazyLoadAudioPlayers();
-    }, 200));
-    
-    // Setup sticky header detection
-    setupStickyHeaderDetection();
 });
 
-// Function to update pagination UI
-function updatePagination(pagination) {
-    console.log("Updating pagination:", pagination);
-    
-    // Only create/update the bottom pagination
-    ensureBottomPaginationContainer();
-    
-    const paginationElement = document.querySelector('.bottom-pagination');
-    if (!paginationElement) {
-        console.warn("No pagination element found");
+/* ========================
+   9 ‑ Lazy audio via IntersectionObserver
+   ======================== */
+function setupLazyLoading() {
+    if (!('IntersectionObserver' in window)) {
+        document.querySelectorAll('.audio-placeholder').forEach(p => audioQueue.add(p));
         return;
     }
-    
-    // Get current search parameters
-    const searchParams = new URLSearchParams(window.location.search);
-    const query = searchParams.get('q');
-    const regex = searchParams.has('regex');
-    const substring = searchParams.has('substring');
-    const maxResults = parseInt(searchParams.get('max_results') || '100');
-    
-    // Create pagination info div
-    const paginationInfo = document.createElement('div');
-    paginationInfo.className = 'pagination-info';
-    paginationInfo.textContent = `עמוד ${pagination.page} מתוך ${pagination.total_pages}`;
-    
-    // Create pagination controls div
-    const paginationControls = document.createElement('div');
-    paginationControls.className = 'pagination-controls';
-    
-    // Add previous button if needed
-    if (pagination.has_prev) {
-        const prevButton = document.createElement('a');
-        prevButton.href = `/search?q=${encodeURIComponent(query)}&page=${pagination.page - 1}` +
-                         `&max_results=${maxResults}` +
-                         (regex ? '&regex=true' : '') +
-                         (substring ? '&substring=true' : '');
-        prevButton.className = 'pagination-btn';
-        prevButton.textContent = '← הקודם';
-        paginationControls.appendChild(prevButton);
-    } else {
-        const prevButton = document.createElement('span');
-        prevButton.className = 'pagination-btn disabled';
-        prevButton.textContent = '← הקודם';
-        paginationControls.appendChild(prevButton);
-    }
-    
-    // Add page numbers
-    const startPage = Math.max(1, pagination.page - 2);
-    const endPage = Math.min(pagination.total_pages, startPage + 4);
-    
-    if (startPage > 1) {
-        const firstPageLink = document.createElement('a');
-        firstPageLink.href = `/search?q=${encodeURIComponent(query)}&page=1` +
-                           `&max_results=${maxResults}` +
-                           (regex ? '&regex=true' : '') +
-                           (substring ? '&substring=true' : '');
-        firstPageLink.className = 'pagination-btn';
-        firstPageLink.textContent = '1';
-        paginationControls.appendChild(firstPageLink);
-        
-        if (startPage > 2) {
-            const ellipsis = document.createElement('span');
-            ellipsis.className = 'pagination-ellipsis';
-            ellipsis.textContent = '...';
-            paginationControls.appendChild(ellipsis);
-        }
-    }
-    
-    for (let i = startPage; i <= endPage; i++) {
-        if (i === pagination.page) {
-            const activePageBtn = document.createElement('span');
-            activePageBtn.className = 'pagination-btn active';
-            activePageBtn.textContent = i.toString();
-            paginationControls.appendChild(activePageBtn);
-        } else {
-            const pageLink = document.createElement('a');
-            pageLink.href = `/search?q=${encodeURIComponent(query)}&page=${i}` +
-                           `&max_results=${maxResults}` +
-                           (regex ? '&regex=true' : '') +
-                           (substring ? '&substring=true' : '');
-            pageLink.className = 'pagination-btn';
-            pageLink.textContent = i.toString();
-            paginationControls.appendChild(pageLink);
-        }
-    }
-    
-    if (endPage < pagination.total_pages) {
-        if (endPage < pagination.total_pages - 1) {
-            const ellipsis = document.createElement('span');
-            ellipsis.className = 'pagination-ellipsis';
-            ellipsis.textContent = '...';
-            paginationControls.appendChild(ellipsis);
-        }
-        
-        const lastPageLink = document.createElement('a');
-        lastPageLink.href = `/search?q=${encodeURIComponent(query)}&page=${pagination.total_pages}` +
-                          `&max_results=${maxResults}` +
-                          (regex ? '&regex=true' : '') +
-                          (substring ? '&substring=true' : '');
-        lastPageLink.className = 'pagination-btn';
-        lastPageLink.textContent = pagination.total_pages.toString();
-        paginationControls.appendChild(lastPageLink);
-    }
-    
-    // Add next button if needed
-    if (pagination.has_next) {
-        const nextButton = document.createElement('a');
-        nextButton.href = `/search?q=${encodeURIComponent(query)}&page=${pagination.page + 1}` +
-                         `&max_results=${maxResults}` +
-                         (regex ? '&regex=true' : '') +
-                         (substring ? '&substring=true' : '');
-        nextButton.className = 'pagination-btn';
-        nextButton.textContent = 'הבא →';
-        paginationControls.appendChild(nextButton);
-    } else {
-        const nextButton = document.createElement('span');
-        nextButton.className = 'pagination-btn disabled';
-        nextButton.textContent = 'הבא →';
-        paginationControls.appendChild(nextButton);
-    }
-    
-    // Clear and update the pagination element
-    paginationElement.innerHTML = '';
-    paginationElement.appendChild(paginationInfo);
-    paginationElement.appendChild(paginationControls);
-    
-    // Also update the results count in the stats section
-    updateResultsCount(pagination);
+    const io = new IntersectionObserver(entries => {
+        entries.forEach(e => { if (e.isIntersecting) audioQueue.add(e.target); });
+    }, { rootMargin: '50px' });
+    document.querySelectorAll('.audio-placeholder').forEach(p => io.observe(p));
 }
-
-// Function to ensure only bottom pagination container exists
-function ensureBottomPaginationContainer() {
-    const resultsContainer = document.querySelector('.results');
-    if (!resultsContainer) return;
-    
-    // Remove any top pagination if it exists
-    const topPagination = document.querySelector('.pagination:not(.bottom-pagination)');
-    if (topPagination) {
-        topPagination.remove();
-    }
-    
-    // Check if bottom pagination exists
-    let bottomPagination = document.querySelector('.bottom-pagination');
-    if (!bottomPagination) {
-        console.log("Creating bottom pagination container");
-        bottomPagination = document.createElement('div');
-        bottomPagination.className = 'pagination bottom-pagination';
-        
-        // Insert after results or before search-stats
-        const searchStats = document.querySelector('.search-stats');
-        if (searchStats) {
-            resultsContainer.parentNode.insertBefore(bottomPagination, searchStats);
-        } else {
-            resultsContainer.parentNode.appendChild(bottomPagination);
-        }
-    }
-}
-
-// Function to update the results count in the stats section
-function updateResultsCount(pagination) {
-    // Update the stats section at the top
-    const statsElement = document.querySelector('.stats');
-    if (statsElement) {
-        let statsText = '';
-        if (pagination.total_results > 0) {
-            const start = (pagination.page - 1) * pagination.per_page + 1;
-            const end = Math.min(pagination.page * pagination.per_page, pagination.total_results);
-            
-            if (pagination.still_searching) {
-                statsText = `מציג ${start} עד ${end} מתוך ${pagination.total_results} תוצאות שנמצאו עד כה (עדיין מחפש...)`;
-                
-                // Always remove duration span if still searching
-                const durationSpan = statsElement.querySelector('.duration');
-                if (durationSpan) {
-                    durationSpan.remove();
-                }
-            } else {
-                statsText = `מציג ${start} עד ${end} מתוך ${pagination.total_results} תוצאות`;
-            }
-        } else {
-            statsText = 'לא נמצאו תוצאות';
-        }
-        
-        // Update the stats text without the duration span
-        statsElement.innerHTML = statsText;
-        
-        // We'll only add the duration span when the search is fully complete
-        // in the checkForMoreResults function
-    }
-    
-    // Remove the redundant results-count element at the bottom if it exists
-    const resultsCountElement = document.getElementById('results-count');
-    if (resultsCountElement && resultsCountElement.parentNode) {
-        resultsCountElement.parentNode.remove();
-    }
-}
-
-// Function to check for more results if progressive search is active
-function checkForMoreResults() {
-    // Store the start time of the progressive search if not already set
-    if (!window.searchStartTime) {
-        window.searchStartTime = Date.now();
-        // Log progressive search start
-        timingLogger.start('progressive_search', {
-            query: new URLSearchParams(window.location.search).get('q')
-        });
-    }
-    
-    const searchParams = new URLSearchParams(window.location.search);
-    const query = searchParams.get('q');
-    const page = parseInt(searchParams.get('page') || '1');
-    const regex = searchParams.has('regex');
-    const substring = searchParams.has('substring');
-    const maxResults = parseInt(searchParams.get('max_results') || '100');
-    
-    // Log check for more results
-    timingLogger.log('search_progress_check', {
-        query: query,
-        page: page,
-        elapsed_ms: Date.now() - window.searchStartTime
-    });
-    
-    // Build API URL
-    const apiUrl = `/search?q=${encodeURIComponent(query)}&page=${page}` + 
-                  `&max_results=${maxResults}` +
-                  (regex ? '&regex=true' : '') +
-                  (substring ? '&substring=true' : '');
-    
-    // Make AJAX request to check for updated results
-    fetch(apiUrl, {
-        headers: {
-            'Accept': 'application/json'
-        }
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log("Progressive search update:", data);
-        
-        // Check if search is still in progress
-        if (data.stats.still_searching) {
-            // Update pagination if needed
-            if (data.pagination.total_pages > 0) {
-                updatePagination(data.pagination);
-            }
-            
-            // Check again in 1 second
-            setTimeout(checkForMoreResults, 1000);
-        } else {
-            // Search is complete, update the UI
-            updatePagination(data.pagination);
-            
-            // Calculate total search duration from our stored start time
-            const totalDuration = Date.now() - window.searchStartTime;
-            
-            // Log search completion
-            timingLogger.end('progressive_search', {
-                total_results: data.pagination.total_results,
-                total_pages: data.pagination.total_pages,
-                request_id: data.stats.request_id
-            });
-            
-            // Update the search duration now that we have the final time
-            const statsElement = document.querySelector('.stats');
-            if (statsElement) {
-                // Only add the duration span now that the search is complete
-                // First ensure any existing one is removed
-                const existingDurationSpan = statsElement.querySelector('.duration');
-                if (existingDurationSpan) {
-                    existingDurationSpan.remove();
-                }
-                
-                // Create a new duration span with the final time
-                let durationSpan = document.createElement('span');
-                durationSpan.className = 'duration';
-                durationSpan.textContent = ` (החיפוש ארך ${totalDuration.toFixed(2)} מילישניות)`;
-                statsElement.appendChild(durationSpan);
-            }
-            
-            // Reset the search start time
-            window.searchStartTime = null;
-            
-            // If we have no results on the current page but there are results available,
-            // redirect to the first page
-            if (data.results.length === 0 && data.stats.total_count > 0 && page > 1) {
-                window.location.href = `/search?q=${encodeURIComponent(query)}&page=1` +
-                                      `&max_results=${maxResults}` +
-                                      (regex ? '&regex=true' : '') +
-                                      (substring ? '&substring=true' : '');
-            }
-        }
-    })
-    .catch(error => {
-        console.error('Error checking for more results:', error);
-    });
-}
-
-// Lazy load audio players that are in the viewport
-function lazyLoadAudioPlayers() {
-    const placeholders = document.querySelectorAll('.audio-placeholder');
-    
-    // Create an array of visible placeholders to load first
-    const visiblePlaceholders = Array.from(placeholders).filter(placeholder => 
-        audioQueue.isInViewport(placeholder) && 
-        placeholder.closest('.source-results').style.display !== 'none'
-    );
-    
-    // Add visible ones to queue with higher priority
-    visiblePlaceholders.forEach(placeholder => {
-        audioQueue.add(placeholder);
-    });
-    
-    // Then add the rest with lower priority
-    placeholders.forEach(placeholder => {
-        if (!visiblePlaceholders.includes(placeholder) && 
-            placeholder.closest('.source-results').style.display !== 'none') {
-            audioQueue.add(placeholder);
-        }
-    });
-}
-
-// Setup intersection observer for lazy loading
-function setupLazyLoading() {
-    if ('IntersectionObserver' in window) {
-        const loadAudioIfVisible = (entries, observer) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting && entry.target.classList.contains('audio-placeholder')) {
-                    // Add to queue with high priority since it's visible
-                    audioQueue.add(entry.target);
-                }
-            });
-        };
-        
-        const observer = new IntersectionObserver(loadAudioIfVisible, {
-            root: null,
-            rootMargin: '50px',
-            threshold: 0.1
-        });
-        
-        // Observe all audio placeholders
-        document.querySelectorAll('.audio-placeholder').forEach(placeholder => {
-            if (placeholder.closest('.source-results').style.display !== 'none') {
-                observer.observe(placeholder);
-            }
-        });
-        
-        // Store observer in window for future use
-        window.audioObserver = observer;
-    } else {
-        // Fallback for browsers that don't support IntersectionObserver
-        lazyLoadAudioPlayers();
-        
-        // Add scroll listener for lazy loading
-        window.addEventListener('scroll', debounce(() => {
-            lazyLoadAudioPlayers();
-        }, 200));
-    }
-}
-
-// Helper function to limit function calls
-function debounce(func, wait) {
-    let timeout;
-    return function() {
-        const context = this;
-        const args = arguments;
-        clearTimeout(timeout);
-        timeout = setTimeout(() => {
-            func.apply(context, args);
-        }, wait);
-    };
-}
-
-// Function to detect when source headers are in sticky position
-function setupStickyHeaderDetection() {
-    // Use IntersectionObserver to detect when headers become sticky
-    if ('IntersectionObserver' in window) {
-        const sourceGroups = document.querySelectorAll('.source-group');
-        
-        sourceGroups.forEach(group => {
-            const header = group.querySelector('.source-header');
-            const stickyObserver = new IntersectionObserver(
-                (entries) => {
-                    // When the top of the source-group is not visible, the header is sticky
-                    const isSticky = entries[0].intersectionRatio < 1;
-                    header.classList.toggle('is-sticky', isSticky);
-                },
-                {
-                    threshold: [1.0],
-                    rootMargin: '-1px 0px 0px 0px'
-                }
-            );
-            
-            // Observe the top edge of the source-group
-            stickyObserver.observe(group);
-        });
-    }
-}
-
-// Initialize progressive loading if needed
-document.addEventListener('DOMContentLoaded', function() {
-    // Check if we're on a search results page
-    const searchParams = new URLSearchParams(window.location.search);
-    const query = searchParams.get('q');
-    
-    if (query) {
-        // Remove any top pagination and ensure only bottom pagination exists
-        ensureBottomPaginationContainer();
-        
-        // Remove the redundant results-count element at the bottom if it exists
-        const resultsCountElement = document.getElementById('results-count');
-        if (resultsCountElement && resultsCountElement.parentNode) {
-            resultsCountElement.parentNode.remove();
-        }
-        
-        // Remove any existing duration span to start fresh
-        const statsElement = document.querySelector('.stats');
-        if (statsElement) {
-            const durationSpan = statsElement.querySelector('.duration');
-            if (durationSpan) {
-                durationSpan.remove();
-            }
-        }
-        
-        // Check if progressive loading is enabled
-        const progressive = searchParams.has('progressive');
-        if (progressive) {
-            console.log("Starting progressive search checks");
-            // Start checking for more results
-            checkForMoreResults();
-        }
-    }
-    
-    // Add progressive parameter to search form
-    const searchForm = document.querySelector('.search-form');
-    if (searchForm && !searchForm.querySelector('input[name="progressive"]')) {
-        console.log("Adding progressive parameter to search form");
-        const progressiveInput = document.createElement('input');
-        progressiveInput.type = 'hidden';
-        progressiveInput.name = 'progressive';
-        progressiveInput.value = 'true';
-        searchForm.appendChild(progressiveInput);
-    }
-});
-
-// Add search form submit timing
-document.querySelector('.search-form').addEventListener('submit', function() {
-    timingLogger.start('search_click_to_results', {
-        query: this.querySelector('input[name="q"]').value
-    });
-}); 

@@ -28,10 +28,30 @@ class FileService:
         return self._records
 
     # --------------------------------------------------------------------- #
-    def _scan(self) -> List[FileRecord]:
-        recs: List[FileRecord] = []
+    def _scan(self) -> list[FileRecord]:
+        """Return one FileRecord per transcript JSON.
+
+        * Supports both legacy flat files:   <id>.json
+        * …and new nested files:            <id>/full_transcript.json
+        """
+        recs: list[FileRecord] = []
         for p in self.transcripts_dir.rglob(f"*{_JSON_SUFFIX}"):
-            rec_id = p.stem      # file name without suffix
+            # nested layout → use directory name as the recording ID
+            if p.name == "full_transcript.json":
+                rec_id = p.parent.name
+            else:                              # flat layout
+                rec_id = p.stem
             recs.append(FileRecord(rec_id, p))
+
+        # complain loudly if we picked up duplicates
+        seen: set[str] = set()
+        dups: set[str] = set()
+        for r in recs:
+            if r.id in seen:
+                dups.add(r.id)
+            seen.add(r.id)
+        if dups:
+            logging.warning("FileService: duplicate IDs detected: %s", ", ".join(sorted(dups)))
+
         recs.sort(key=lambda r: r.id)
         return recs
