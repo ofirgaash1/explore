@@ -106,6 +106,7 @@ function fetchSegmentByChar(epi, charOff) {
     return fetch(`/search/segment?episode_idx=${epi}&char_offset=${charOff}`)
             .then(r => r.json());
 }
+
 function fetchSegmentByIdx(epi, idx) {
     const k = `${epi}|${idx}`;
     if (segmentCache[k]) return Promise.resolve(segmentCache[k]);
@@ -114,14 +115,52 @@ function fetchSegmentByIdx(epi, idx) {
            .then(j => (segmentCache[k] = j));
 }
 
+function fetchSegmentsByIdxBatch(epi, indices) {
+    // Filter out already cached segments
+    const uncachedIndices = indices.filter(idx => !segmentCache[`${epi}|${idx}`]);
+    
+    if (uncachedIndices.length === 0) {
+        // All segments are cached, return them
+        return Promise.resolve(indices.map(idx => segmentCache[`${epi}|${idx}`]));
+    }
+
+    return fetch('/search/segment/by_idx', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+            episode_idx: epi,
+            seg_indices: uncachedIndices
+        })
+    })
+    .then(r => r.json())
+    .then(segments => {
+        // Cache the new segments
+        segments.forEach(seg => {
+            segmentCache[`${epi}|${seg.segment_index}`] = seg;
+        });
+        
+        // Return all requested segments in order
+        return indices.map(idx => segmentCache[`${epi}|${idx}`]);
+    });
+}
+
 /* ========================
    5 ‑ Text highlighting utils
    ======================== */
 const queryTerm = new URLSearchParams(window.location.search).get('q') || '';
-function highlightQuery(txt) {
-    if (!queryTerm) return txt;
+function highlightQuery(txt, charOffset) {
+    if (!queryTerm || charOffset === undefined) return txt;
     const escaped = queryTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    return txt.replace(new RegExp(`(${escaped})`, 'gi'), '<strong>$1</strong>');
+    const regex = new RegExp(`(${escaped})`, 'i');
+    const match = txt.slice(charOffset).match(regex);
+    if (!match) return txt;
+    
+    const matchLength = match[0].length;
+    return txt.slice(0, charOffset) + 
+           `<strong>${txt.slice(charOffset, charOffset + matchLength)}</strong>` + 
+           txt.slice(charOffset + matchLength);
 }
 
 /* ========================
@@ -129,37 +168,63 @@ function highlightQuery(txt) {
    ======================== */
 function buildContext(resultItem, seg) {
     let curIdx = seg.segment_index;
+    const epi = resultItem.dataset.epi;
+    const charOffset = parseInt(resultItem.dataset.char);
 
     const ctx = document.createElement('div');
     ctx.className = 'context-container';
-    ctx.innerHTML = renderSegment(seg);
+    
+    // Fetch segments before and after
+    const fetchSegments = async () => {
+        // Calculate all segment indices we need
+        const indices = [];
+        for (let i = curIdx - 5; i <= curIdx + 5; i++) {
+            if (i >= 0) {
+                indices.push(i);
+            }
+        }
+        
+        try {
+            const segments = await fetchSegmentsByIdxBatch(epi, indices);
+            return segments;
+        } catch (e) {
+            console.error('Error fetching segments:', e);
+            return [seg]; // Return at least the current segment on error
+        }
+    };
+
+    // Render all segments
+    const renderSegments = (segments) => {
+        return segments.map(s => {
+            // Only highlight the exact match in the current segment
+            const shouldHighlight = s.segment_index === curIdx;
+            return `
+                <div class="context-segment ${s.segment_index === curIdx ? 'current-segment' : ''}"
+                     data-start="${s.start_sec}" 
+                     data-seg="${s.segment_index}">
+                    ${shouldHighlight ? highlightQuery(s.text, charOffset) : s.text}
+                </div>
+            `;
+        }).join('');
+    };
+
+    // Initial loading state
+    ctx.innerHTML = '<div class="loading">Loading context...</div>';
     resultItem.querySelector('.result-text-container').replaceChildren(ctx);
 
-    ctx.querySelector('.context-segment').addEventListener('click', e => {
-        playFromSourceAudio(resultItem.dataset.source, e.target.dataset.start);
-    });
-    ctx.querySelector('.prev-btn').addEventListener('click', () => shift(-1));
-    ctx.querySelector('.next-btn').addEventListener('click', () => shift(+1));
-
-    function shift(delta) {
-        const next = curIdx + delta;
-        fetchSegmentByIdx(resultItem.dataset.epi, next).then(s => {
-            curIdx = s.segment_index;
-            ctx.innerHTML = renderSegment(s);
-            ctx.querySelector('.context-segment').addEventListener('click', e => {
+    // Fetch and render segments
+    fetchSegments().then(segments => {
+        ctx.innerHTML = renderSegments(segments);
+        
+        // Add click handlers to all segments
+        ctx.querySelectorAll('.context-segment').forEach(segment => {
+            segment.addEventListener('click', e => {
                 playFromSourceAudio(resultItem.dataset.source, e.target.dataset.start);
             });
         });
-    }
+    });
 
-    function renderSegment(s) {
-        return `<button class="prev-btn" title="קודם">▲</button>
-                <span class="context-segment current-segment"
-                      data-start="${s.start_sec}" data-seg="${s.segment_index}">
-                    ${highlightQuery(s.text)}
-                </span>
-                <button class="next-btn" title="הבא">▼</button>`;
-    }
+    resultItem.dataset.ctxLoaded = '1';
 }
 
 /* ========================
@@ -181,21 +246,15 @@ document.addEventListener('DOMContentLoaded', () => {
     const rq = document.querySelector('meta[name="request-id"]');
     if (rq) timingLogger.init(rq.content);
 
-    // bind result clicks
+    // Load all segments immediately for all result items
     document.querySelectorAll('.result-item').forEach(item => {
-        item.addEventListener('click', function () {
-            if (this.dataset.ctxLoaded === '1') return;
-            const epi  = this.dataset.epi;
-            const char = this.dataset.char;
-            fetchSegmentByChar(epi, char).then(seg => {
-                buildContext(this, seg);
-                this.dataset.ctxLoaded = '1';
-            });
+        const epi = item.dataset.epi;
+        const char = item.dataset.char;
+        fetchSegmentByChar(epi, char).then(seg => {
+            buildContext(item, seg);
+            item.dataset.ctxLoaded = '1';
         });
     });
-
-    // lazy load header audios that are visible on initial paint
-    setupLazyLoading();
 });
 
 /* ========================
@@ -210,4 +269,42 @@ function setupLazyLoading() {
         entries.forEach(e => { if (e.isIntersecting) audioQueue.add(e.target); });
     }, { rootMargin: '50px' });
     document.querySelectorAll('.audio-placeholder').forEach(p => io.observe(p));
+}
+
+function toggleSource(sourceId) {
+    const resultsDiv = document.getElementById(sourceId + '-results');
+    const icon = document.getElementById('icon-' + sourceId);
+    const sourceHeader = document.querySelector(`.source-header[onclick*="${sourceId}"]`);
+
+    if (resultsDiv.style.display === 'none') {
+        resultsDiv.style.display = 'block';
+        icon.textContent = '▼';
+
+        // Load audio immediately
+        const audioContainer = sourceHeader.querySelector('.audio-container');
+        if (audioContainer) {
+            const srcId = audioContainer.dataset.source;
+            const fmt = audioContainer.dataset.format || 'opus';
+            const start = parseFloat(audioContainer.dataset.start) || 0;
+            const audioUrl = `/audio/${srcId}.${fmt}#t=${start}`;
+
+            const audio = document.createElement('audio');
+            audio.controls = true;
+            audio.preload = 'metadata';
+            const src = document.createElement('source');
+            src.src = audioUrl;
+            src.type = fmt === 'opus' ? 'audio/ogg; codecs=opus' : fmt === 'mp3' ? 'audio/mpeg' : `audio/${fmt}`;
+            audio.appendChild(src);
+            audioContainer.appendChild(audio);
+            audioManager.register(audio);
+        }
+
+        // Ensure header is visible
+        if (!isInViewport(sourceHeader)) {
+            sourceHeader.scrollIntoView({behavior:'smooth', block:'start'});
+        }
+    } else {
+        resultsDiv.style.display = 'none';
+        icon.textContent = '▶';
+    }
 }

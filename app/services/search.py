@@ -20,7 +20,7 @@ class SearchService:
     # ­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­ #
     def search(self, query: str, *, regex: bool = False) -> List[SearchHit]:
         idx = self._index_mgr.get()
-        matcher = _make_matcher(query, regex)
+        matcher = _make_matcher(query)
 
         hits: List[SearchHit] = []
         for epi, text in enumerate(idx.text):
@@ -34,21 +34,17 @@ class SearchService:
         return segment_for_hit(idx, hit.episode_idx, hit.char_offset)
 
 # ------------------------------------------------------------------ #
-def _make_matcher(pat: str, regex: bool) -> Callable[[str], List[int]]:
-    """Return function that yields every match offset in s."""
-    if not regex:
-        def _inner(s: str) -> List[int]:
-            off, res = 0, []
-            while True:
-                off = s.find(pat, off)
-                if off == -1:
-                    return res
-                res.append(off)
-                off += 1
-        return _inner
+def _make_matcher(pat: str) -> Callable[[str], List[int]]:
+    """Return function that yields every match offset in s using regex.
+    For single words, adds word boundary matching."""
+    # Check if pattern is a single word (no spaces or special regex chars)
+    if re.match(r'^[\w-]+$', pat):
+        pat = r'\b' + re.escape(pat) + r'\b'
     else:
-        rx = re.compile(pat)
+        pat = re.escape(pat)
+    
+    rx = re.compile(pat)
 
-        def _inner(s: str) -> List[int]:
-            return [m.start() for m in rx.finditer(s)]
-        return _inner
+    def _inner(s: str) -> List[int]:
+        return [m.start() for m in rx.finditer(s)]
+    return _inner

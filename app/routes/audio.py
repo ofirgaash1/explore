@@ -26,44 +26,62 @@ def send_range_file(path, request_id=None):
     size = os.path.getsize(path)
     content_type = mimetypes.guess_type(path)[0] or 'application/octet-stream'
 
+    def generate_chunks():
+        chunk_size = 8192  # 8KB chunks
+        with open(path, 'rb') as f:
+            if range_header:
+                # Example Range: bytes=12345-
+                byte1, byte2 = 0, None
+                m = re.search(r'bytes=(\d+)-(\d*)', range_header)
+                if m:
+                    byte1 = int(m.group(1))
+                    if m.group(2):
+                        byte2 = int(m.group(2))
+                if byte2 is None:
+                    byte2 = size - 1
+                length = byte2 - byte1 + 1
+                
+                if request_id:
+                    logger.info(f"[TIMING] [REQ:{request_id}] Serving range request: bytes {byte1}-{byte2}/{size}")
+                
+                f.seek(byte1)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+            else:
+                if request_id:
+                    logger.info(f"[TIMING] [REQ:{request_id}] Serving full file: {size} bytes")
+                
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+
     if range_header:
-        # Example Range: bytes=12345-
-        byte1, byte2 = 0, None
         m = re.search(r'bytes=(\d+)-(\d*)', range_header)
         if m:
             byte1 = int(m.group(1))
-            if m.group(2):
-                byte2 = int(m.group(2))
-        if byte2 is None:
-            byte2 = size - 1
-        length = byte2 - byte1 + 1
-        
-        if request_id:
-            logger.info(f"[TIMING] [REQ:{request_id}] Serving range request: bytes {byte1}-{byte2}/{size}")
-
-        with open(path, 'rb') as f:
-            f.seek(byte1)
-            data = f.read(length)
-
-        resp = Response(data, 206, mimetype=content_type)
-        resp.headers.add('Content-Range', f'bytes {byte1}-{byte2}/{size}')
-        resp.headers.add('Accept-Ranges', 'bytes')
-        resp.headers.add('Content-Length', str(length))
-        
-        if request_id:
-            duration_ms = (time.time() - start_time) * 1000
-            logger.info(f"[TIMING] [REQ:{request_id}] Range file served in {duration_ms:.2f}ms")
-        
-        return resp
+            byte2 = int(m.group(2)) if m.group(2) else size - 1
+            length = byte2 - byte1 + 1
+            
+            resp = Response(generate_chunks(), 206, mimetype=content_type)
+            resp.headers.add('Content-Range', f'bytes {byte1}-{byte2}/{size}')
+            resp.headers.add('Accept-Ranges', 'bytes')
+            resp.headers.add('Content-Length', str(length))
+            
+            if request_id:
+                duration_ms = (time.time() - start_time) * 1000
+                logger.info(f"[TIMING] [REQ:{request_id}] Range file served in {duration_ms:.2f}ms")
+            
+            return resp
 
     # No Range: return full file
-    if request_id:
-        logger.info(f"[TIMING] [REQ:{request_id}] Serving full file: {size} bytes")
-        
-    with open(path, 'rb') as f:
-        data = f.read()
-
-    resp = Response(data, 200, mimetype=content_type)
+    resp = Response(generate_chunks(), 200, mimetype=content_type)
     resp.headers.add('Accept-Ranges', 'bytes')
     resp.headers.add('Content-Length', str(size))
     

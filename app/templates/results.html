@@ -66,7 +66,7 @@
 
 <div class="results">
 
-  {# group the flat results list by ‘source’ (== recording ID) #}
+  {# group the flat results list by 'source' (== recording ID) #}
   {% for source, source_results in results|groupby('source') %}
   <div class="source-group">
 
@@ -86,8 +86,8 @@
            class="btn btn-export">אודיו</a>
       </div>
 
-      {# audio placeholder – actual player is injected by JS #}
-      <div class="audio-placeholder source-audio-placeholder"
+      {# Direct audio container instead of placeholder #}
+      <div class="audio-container source-audio-container"
            data-source="{{ source|urlencode }}"
            data-format="{{ available_files[source].audio_format
                            if source in available_files else '' }}"
@@ -107,7 +107,7 @@
 
         <div class="result-content">
           <div class="result-text-container">
-            <p class="result-text placeholder">לחץ להצגת הקטע…</p>
+            <div class="context-container loading">טוען...</div>
           </div>
         </div>
       </div>
@@ -143,8 +143,8 @@ function toggleSource(sourceId) {
     icon.textContent = '▼';
 
     /* lazily load audio player */
-    const ph = sourceHeader.querySelector('.audio-placeholder');
-    if (ph && ph.classList.contains('audio-placeholder')) {
+    const ph = sourceHeader.querySelector('.audio-container');
+    if (ph && ph.classList.contains('audio-container')) {
       loadAudio(ph);
     }
 
