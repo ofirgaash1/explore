@@ -136,6 +136,77 @@ function fetchSegmentByIdx(epi, idx) {
            .then(j => (segmentCache[k] = j));
 }
 
+// Global batch queue for segment fetches
+const segmentBatchQueue = {
+    queue: new Map(), // Map<episode_idx, Set<segment_idx>>
+    timeout: null,
+    
+    add(epi, idx) {
+        if (!this.queue.has(epi)) {
+            this.queue.set(epi, new Set());
+        }
+        this.queue.get(epi).add(idx);
+        
+        // Schedule a fetch if not already scheduled
+        if (!this.timeout) {
+            this.timeout = setTimeout(() => this.flush(), 50); // 50ms debounce
+        }
+    },
+    
+    async flush() {
+        if (this.queue.size === 0) return;
+        
+        // Convert queue to lookups array
+        const lookups = Array.from(this.queue.entries()).map(([epi, indices]) => ({
+            episode_idx: epi,
+            seg_indices: Array.from(indices)
+        }));
+        
+        // Clear queue
+        this.queue.clear();
+        this.timeout = null;
+        
+        try {
+            const response = await fetch('/search/segment/by_idx', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lookups })
+            });
+            
+            const results = await response.json();
+            
+            // Cache all segments
+            results.forEach(result => {
+                result.segments.forEach(seg => {
+                    segmentCache[`${result.episode_idx}|${seg.segment_index}`] = seg;
+                });
+            });
+            
+            // Trigger any pending promises
+            this.resolvePendingPromises();
+        } catch (error) {
+            console.error('Error fetching segments:', error);
+            this.rejectPendingPromises(error);
+        }
+    },
+    
+    pendingPromises: [],
+    
+    addPendingPromise(resolve, reject) {
+        this.pendingPromises.push({ resolve, reject });
+    },
+    
+    resolvePendingPromises() {
+        this.pendingPromises.forEach(({ resolve }) => resolve());
+        this.pendingPromises = [];
+    },
+    
+    rejectPendingPromises(error) {
+        this.pendingPromises.forEach(({ reject }) => reject(error));
+        this.pendingPromises = [];
+    }
+};
+
 function fetchSegmentsByIdxBatch(epi, indices) {
     // Filter out already cached segments
     const uncachedIndices = indices.filter(idx => !segmentCache[`${epi}|${idx}`]);
@@ -144,27 +215,14 @@ function fetchSegmentsByIdxBatch(epi, indices) {
         // All segments are cached, return them
         return Promise.resolve(indices.map(idx => segmentCache[`${epi}|${idx}`]));
     }
-
-    return fetch('/search/segment/by_idx', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-            episode_idx: epi,
-            seg_indices: uncachedIndices
-        })
-    })
-    .then(r => r.json())
-    .then(segments => {
-        // Cache the new segments
-        segments.forEach(seg => {
-            segmentCache[`${epi}|${seg.segment_index}`] = seg;
-        });
-        
-        // Return all requested segments in order
-        return indices.map(idx => segmentCache[`${epi}|${idx}`]);
-    });
+    
+    // Add uncached segments to the batch queue
+    uncachedIndices.forEach(idx => segmentBatchQueue.add(epi, idx));
+    
+    // Return a promise that resolves when the batch is processed
+    return new Promise((resolve, reject) => {
+        segmentBatchQueue.addPendingPromise(resolve, reject);
+    }).then(() => indices.map(idx => segmentCache[`${epi}|${idx}`]));
 }
 
 /* ========================

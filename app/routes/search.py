@@ -75,25 +75,40 @@ def get_segments_by_idx():
             })
         else:
             # Batch request
-            epi = int(request.json["episode_idx"])
-            indices = request.json["seg_indices"]
-            if not isinstance(indices, list):
-                abort(400, "seg_indices must be an array")
+            lookups = request.json["lookups"]
+            if not isinstance(lookups, list):
+                abort(400, "lookups must be an array")
             
-            segments = []
-            for idx in indices:
+            results = []
+            for lookup in lookups:
                 try:
-                    seg = segment_by_idx(index_mgr, epi, int(idx))
-                    segments.append({
-                        "segment_index": seg.seg_idx,
-                        "start_sec": seg.start_sec,
-                        "text": seg.text
+                    epi = int(lookup["episode_idx"])
+                    indices = lookup["seg_indices"]
+                    if not isinstance(indices, list):
+                        abort(400, "seg_indices must be an array")
+                    
+                    segments = []
+                    for idx in indices:
+                        try:
+                            seg = segment_by_idx(index_mgr, epi, int(idx))
+                            segments.append({
+                                "segment_index": seg.seg_idx,
+                                "start_sec": seg.start_sec,
+                                "text": seg.text
+                            })
+                        except (IndexError, ValueError) as e:
+                            # Skip invalid indices but continue processing others
+                            continue
+                    
+                    results.append({
+                        "episode_idx": epi,
+                        "segments": segments
                     })
-                except (IndexError, ValueError) as e:
-                    # Skip invalid indices but continue processing others
+                except (KeyError, ValueError) as e:
+                    # Skip invalid lookups but continue processing others
                     continue
             
-            return jsonify(segments)
+            return jsonify(results)
             
     except (KeyError, ValueError) as e:
         abort(400, str(e))

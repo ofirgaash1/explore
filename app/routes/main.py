@@ -32,7 +32,7 @@ def home():
 def search():
     query      = request.args.get('q', '').strip()
     use_regex  = request.args.get('regex', '').lower() in ('true', '1', 'on')
-    per_page   = int(request.args.get('max_results', 100))
+    per_page   = int(request.args.get('max_results', 20))
     page       = max(1, int(request.args.get('page', 1)))
 
     global search_service, file_service
