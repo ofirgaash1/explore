@@ -231,11 +231,22 @@ function buildContext(resultItem, seg) {
    7 ‑ Audio helper to seek header player
    ======================== */
 function playFromSourceAudio(sourceId, startSec) {
-    const headerAudio = document.querySelector(`.source-header .audio-container[data-source="${encodeURIComponent(sourceId)}"] audio`);
-    if (!headerAudio) return;
+    // URL encode the sourceId to match the encoded version in the DOM
+    const encodedSourceId = encodeURIComponent(sourceId);
+    const headerAudio = document.querySelector(`.source-header[data-source="${encodedSourceId}"] audio`) || 
+                       document.querySelector(`.source-header audio[data-source="${encodedSourceId}"]`) ||
+                       document.querySelector(`.source-header source[src*="${encodedSourceId}"]`).parentElement;
+    
+    if (!headerAudio) {
+        console.warn(`Could not find audio element for source: ${sourceId}`);
+        return;
+    }
+
     audioManager.stop();
     headerAudio.currentTime = parseFloat(startSec);
-    headerAudio.play();
+    headerAudio.play().catch(err => {
+        console.error('Error playing audio:', err);
+    });
 }
 
 /* ========================
