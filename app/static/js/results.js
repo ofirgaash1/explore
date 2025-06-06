@@ -32,7 +32,7 @@
         const dur = performance.now() - rec.t0;
         delete this.timestamps[ev];
         const payload = { ...rec.data, ...extra, duration_ms: dur, request_id: this.requestId };
-        console.log(`[TIMING] ${ev} – ${dur.toFixed(1)} ms`, payload);
+        console.log(`[TIMING] ${ev} – ${dur.toFixed(1)} ms`, payload);
         fetch('/api/log-timing', {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ event_type: ev, data: payload }), keepalive: true
@@ -47,7 +47,10 @@
    ======================== */
 const audioManager = {
     current: null,
-    register(audio) {
+    players: new Map(), // Map to store all audio players
+
+    register(audio, id) {
+        this.players.set(id, audio);
         audio.addEventListener('play', () => {
             if (this.current && this.current !== audio) this.current.pause();
             this.current = audio;
@@ -56,7 +59,13 @@ const audioManager = {
         audio.addEventListener('pause', () => { if (this.current === audio) this.current = null; });
         return audio;
     },
-    stop() { if (this.current) this.current.pause(); }
+    stop() { 
+        if (this.current) this.current.pause();
+        this.current = null;
+    },
+    getPlayer(id) {
+        return this.players.get(id);
+    }
 };
 
 /* ========================
@@ -83,17 +92,29 @@ function loadAudio(placeholder) {
     const fmt   = placeholder.dataset.format || 'opus';
     const start = parseFloat(placeholder.dataset.start) || 0;
     const audioUrl = `/audio/${srcId}.${fmt}#t=${start}`;
+    const playerId = `audio-${srcId}-${start}`;
 
     timingLogger.start('audio_loading', { source_id: srcId, start_time: start });
 
-    const cont  = document.createElement('div'); cont.className = 'audio-container';
-    const audio = document.createElement('audio'); audio.controls = true; audio.preload = 'metadata';
-    const src   = document.createElement('source'); src.src = audioUrl;
+    const cont  = document.createElement('div'); 
+    cont.className = 'audio-container';
+    cont.dataset.playerId = playerId;
+    
+    const audio = document.createElement('audio'); 
+    audio.controls = true; 
+    audio.preload = 'metadata';
+    audio.id = playerId;
+    
+    const src   = document.createElement('source'); 
+    src.src = audioUrl;
     src.type = fmt === 'opus' ? 'audio/ogg; codecs=opus' : fmt === 'mp3' ? 'audio/mpeg' : `audio/${fmt}`;
-    audio.appendChild(src); cont.appendChild(audio); placeholder.replaceWith(cont);
+    
+    audio.appendChild(src); 
+    cont.appendChild(audio); 
+    placeholder.replaceWith(cont);
 
     audio.addEventListener('loadedmetadata', () => timingLogger.end('audio_loading'));
-    audioManager.register(audio);
+    audioManager.register(audio, playerId);
     return audio;
 }
 
@@ -198,11 +219,12 @@ function buildContext(resultItem, seg) {
         return segments.map(s => {
             // Only highlight the exact match in the current segment
             const shouldHighlight = s.segment_index === curIdx;
+            const text = shouldHighlight ? highlightQuery(s.text, charOffset) : s.text;
             return `
                 <div class="context-segment ${s.segment_index === curIdx ? 'current-segment' : ''}"
                      data-start="${s.start_sec}" 
                      data-seg="${s.segment_index}">
-                    ${shouldHighlight ? highlightQuery(s.text, charOffset) : s.text}
+                    ${text}
                 </div>
             `;
         }).join('');
@@ -210,7 +232,18 @@ function buildContext(resultItem, seg) {
 
     // Initial loading state
     ctx.innerHTML = '<div class="loading">Loading context...</div>';
-    resultItem.querySelector('.result-text-container').replaceChildren(ctx);
+    
+    // Find the result text container and append the context
+    const resultTextContainer = resultItem.querySelector('.result-text-container');
+    if (resultTextContainer) {
+        // Clear any existing content except the audio player
+        const audioPlayer = resultTextContainer.querySelector('.audio-container');
+        resultTextContainer.innerHTML = '';
+        if (audioPlayer) {
+            resultTextContainer.appendChild(audioPlayer);
+        }
+        resultTextContainer.appendChild(ctx);
+    }
 
     // Fetch and render segments
     fetchSegments().then(segments => {
@@ -219,34 +252,13 @@ function buildContext(resultItem, seg) {
         // Add click handlers to all segments
         ctx.querySelectorAll('.context-segment').forEach(segment => {
             segment.addEventListener('click', e => {
-                playFromSourceAudio(resultItem.dataset.source, e.target.dataset.start);
+                // Pass both the result item's segment index and the clicked segment's start time
+                playFromSourceAudio(resultItem.dataset.source, resultItem.dataset.seg, e.target.dataset.start);
             });
         });
     });
 
     resultItem.dataset.ctxLoaded = '1';
-}
-
-/* ========================
-   7 ‑ Audio helper to seek header player
-   ======================== */
-function playFromSourceAudio(sourceId, startSec) {
-    // URL encode the sourceId to match the encoded version in the DOM
-    const encodedSourceId = encodeURIComponent(sourceId);
-    const headerAudio = document.querySelector(`.source-header[data-source="${encodedSourceId}"] audio`) || 
-                       document.querySelector(`.source-header audio[data-source="${encodedSourceId}"]`) ||
-                       document.querySelector(`.source-header source[src*="${encodedSourceId}"]`).parentElement;
-    
-    if (!headerAudio) {
-        console.warn(`Could not find audio element for source: ${sourceId}`);
-        return;
-    }
-
-    audioManager.stop();
-    headerAudio.currentTime = parseFloat(startSec);
-    headerAudio.play().catch(err => {
-        console.error('Error playing audio:', err);
-    });
 }
 
 /* ========================
@@ -257,8 +269,60 @@ document.addEventListener('DOMContentLoaded', () => {
     const rq = document.querySelector('meta[name="request-id"]');
     if (rq) timingLogger.init(rq.content);
 
-    // Load all segments immediately for all result items
-    document.querySelectorAll('.result-item').forEach(item => {
+    // Remove any existing source-level audio players
+    document.querySelectorAll('.source-header .audio-container').forEach(container => {
+        container.remove();
+    });
+
+    // Create audio players for all result items
+    document.querySelectorAll('.result-item').forEach((item, index) => {
+        // Add hit index to the result item
+        item.dataset.hitIndex = index;
+        
+        // Create audio player for this hit
+        const srcId = decodeURIComponent(item.dataset.source);
+        const start = parseFloat(item.dataset.start) || 0;
+        const segIdx = parseInt(item.dataset.segId) || 0;
+        const playerId = `audio-hit-${index}`;
+        const audioUrl = `/audio/${encodeURIComponent(srcId)}.opus#t=${start}`;
+
+        const audioContainer = document.createElement('div');
+        audioContainer.className = 'audio-container';
+        audioContainer.dataset.playerId = playerId;
+        audioContainer.dataset.source = srcId;
+        audioContainer.dataset.segId = segIdx;
+
+        const audio = document.createElement('audio');
+        audio.controls = true;
+        audio.preload = 'none'; // Don't preload until we set the start time
+        audio.id = playerId;
+        audio.dataset.source = srcId;
+        audio.dataset.segId = segIdx;
+
+        // Set buffer limits
+        audio.addEventListener('loadedmetadata', () => {
+            // Set buffer size to 10 seconds or 100KB, whichever is smaller
+            const bufferSize = Math.min(10, 100 / (audio.duration * 128)); // 128kbps is typical for opus
+            audio.buffered.end = bufferSize;
+        });
+
+        const src = document.createElement('source');
+        src.src = audioUrl;
+        src.type = 'audio/ogg; codecs=opus';
+        
+        audio.appendChild(src);
+        audioContainer.appendChild(audio);
+
+        // Insert the audio player at the start of the result item
+        const resultTextContainer = item.querySelector('.result-text-container');
+        if (resultTextContainer) {
+            resultTextContainer.insertBefore(audioContainer, resultTextContainer.firstChild);
+        }
+
+        // Register the audio player
+        audioManager.register(audio, playerId);
+
+        // Load segment data
         const epi = item.dataset.epi;
         const char = item.dataset.char;
         fetchSegmentByChar(epi, char).then(seg => {
@@ -267,6 +331,37 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 });
+
+/* ========================
+   7 ‑ Audio helper to seek header player
+   ======================== */
+function playFromSourceAudio(sourceId, segIdx, startTime) {
+    // Find the result item that matches this source and segment
+    const resultItem = document.querySelector(`.result-item[data-source="${sourceId}"][data-seg="${segIdx}"]`);
+    if (!resultItem) {
+        console.warn(`Could not find result item for source: ${sourceId} and segment: ${segIdx}`);
+        return;
+    }
+
+    // Get the audio player directly from the result item
+    const audio = resultItem.querySelector('audio');
+    if (!audio) {
+        console.warn(`Could not find audio element in result item`);
+        return;
+    }
+
+    // Stop all other players
+    audioManager.stop();
+    
+    // Set the start time and load the audio
+    audio.currentTime = parseFloat(startTime);
+    audio.preload = 'metadata'; // Start loading after setting the time
+    
+    // Play the audio
+    audio.play().catch(err => {
+        console.error('Error playing audio:', err);
+    });
+}
 
 /* ========================
    9 ‑ Lazy audio via IntersectionObserver
@@ -280,42 +375,4 @@ function setupLazyLoading() {
         entries.forEach(e => { if (e.isIntersecting) audioQueue.add(e.target); });
     }, { rootMargin: '50px' });
     document.querySelectorAll('.audio-placeholder').forEach(p => io.observe(p));
-}
-
-function toggleSource(sourceId) {
-    const resultsDiv = document.getElementById(sourceId + '-results');
-    const icon = document.getElementById('icon-' + sourceId);
-    const sourceHeader = document.querySelector(`.source-header[onclick*="${sourceId}"]`);
-
-    if (resultsDiv.style.display === 'none') {
-        resultsDiv.style.display = 'block';
-        icon.textContent = '▼';
-
-        // Load audio immediately
-        const audioContainer = sourceHeader.querySelector('.audio-container');
-        if (audioContainer) {
-            const srcId = audioContainer.dataset.source;
-            const fmt = audioContainer.dataset.format || 'opus';
-            const start = parseFloat(audioContainer.dataset.start) || 0;
-            const audioUrl = `/audio/${srcId}.${fmt}#t=${start}`;
-
-            const audio = document.createElement('audio');
-            audio.controls = true;
-            audio.preload = 'metadata';
-            const src = document.createElement('source');
-            src.src = audioUrl;
-            src.type = fmt === 'opus' ? 'audio/ogg; codecs=opus' : fmt === 'mp3' ? 'audio/mpeg' : `audio/${fmt}`;
-            audio.appendChild(src);
-            audioContainer.appendChild(audio);
-            audioManager.register(audio);
-        }
-
-        // Ensure header is visible
-        if (!isInViewport(sourceHeader)) {
-            sourceHeader.scrollIntoView({behavior:'smooth', block:'start'});
-        }
-    } else {
-        resultsDiv.style.display = 'none';
-        icon.textContent = '▶';
-    }
 }
