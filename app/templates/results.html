@@ -72,7 +72,7 @@
 
     {# ─────── source header (clickable) ─────── #}
     <div class="source-header"
-         onclick="toggleSource('{{ source }}')">
+      onclick='toggleSource({{ source|tojson }})'>
       <span class="toggle-icon" id="icon-{{ source }}">▶</span>
       <span class="source-title">{{ source }}</span>
       <span class="result-count">{{ source_results|length }} תוצאות</span>
