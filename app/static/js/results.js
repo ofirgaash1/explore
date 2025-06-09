@@ -123,29 +123,16 @@ function loadAudio(placeholder) {
    ======================== */
 const segmentCache = {};   // key = `${epi}|${idx}`
 
-function fetchSegmentByChar(epi, charOff) {
-    return fetch(`/search/segment?episode_idx=${epi}&char_offset=${charOff}`)
-            .then(r => r.json());
-}
-
-function fetchSegmentByIdx(epi, idx) {
-    const k = `${epi}|${idx}`;
-    if (segmentCache[k]) return Promise.resolve(segmentCache[k]);
-    return fetch(`/search/segment/by_idx?episode_idx=${epi}&seg_idx=${idx}`)
-           .then(r => r.json())
-           .then(j => (segmentCache[k] = j));
-}
-
 // Global batch queue for segment fetches
 const segmentBatchQueue = {
-    queue: new Map(), // Map<episode_idx, Set<segment_idx>>
+    queue: new Map(), // Map<episode_idx, Set<{char_offset, resolve}>>
     timeout: null,
     
-    add(epi, idx) {
+    add(epi, char, resolve) {
         if (!this.queue.has(epi)) {
             this.queue.set(epi, new Set());
         }
-        this.queue.get(epi).add(idx);
+        this.queue.get(epi).add({ char_offset: char, resolve });
         
         // Schedule a fetch if not already scheduled
         if (!this.timeout) {
@@ -157,17 +144,19 @@ const segmentBatchQueue = {
         if (this.queue.size === 0) return;
         
         // Convert queue to lookups array
-        const lookups = Array.from(this.queue.entries()).map(([epi, indices]) => ({
-            episode_idx: epi,
-            seg_indices: Array.from(indices)
-        }));
+        const lookups = [];
+        this.queue.forEach((chars, epi) => {
+            chars.forEach(({ char_offset }) => {
+                lookups.push({ episode_idx: epi, char_offset });
+            });
+        });
         
         // Clear queue
         this.queue.clear();
         this.timeout = null;
         
         try {
-            const response = await fetch('/search/segment/by_idx', {
+            const response = await fetch('/search/segment', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ lookups })
@@ -175,54 +164,51 @@ const segmentBatchQueue = {
             
             const results = await response.json();
             
-            // Cache all segments
+            // Resolve all promises with their corresponding results
             results.forEach(result => {
-                result.segments.forEach(seg => {
-                    segmentCache[`${result.episode_idx}|${seg.segment_index}`] = seg;
-                });
+                const chars = this.queue.get(result.episode_idx);
+                if (chars) {
+                    chars.forEach(({ char_offset, resolve }) => {
+                        if (char_offset === result.char_offset) {
+                            resolve(result);
+                        }
+                    });
+                }
             });
-            
-            // Trigger any pending promises
-            this.resolvePendingPromises();
         } catch (error) {
             console.error('Error fetching segments:', error);
-            this.rejectPendingPromises(error);
+            // Reject all pending promises
+            this.queue.forEach(chars => {
+                chars.forEach(({ resolve }) => resolve(null));
+            });
         }
-    },
-    
-    pendingPromises: [],
-    
-    addPendingPromise(resolve, reject) {
-        this.pendingPromises.push({ resolve, reject });
-    },
-    
-    resolvePendingPromises() {
-        this.pendingPromises.forEach(({ resolve }) => resolve());
-        this.pendingPromises = [];
-    },
-    
-    rejectPendingPromises(error) {
-        this.pendingPromises.forEach(({ reject }) => reject(error));
-        this.pendingPromises = [];
     }
 };
 
-function fetchSegmentsByIdxBatch(epi, indices) {
-    // Filter out already cached segments
-    const uncachedIndices = indices.filter(idx => !segmentCache[`${epi}|${idx}`]);
+function fetchSegmentByChar(epi, char) {
+    return new Promise((resolve) => {
+        segmentBatchQueue.add(epi, char, resolve);
+    });
+}
+
+async function fetchSegmentsByIdxBatch(lookups) {
+    if (lookups.length === 0) return [];
     
-    if (uncachedIndices.length === 0) {
-        // All segments are cached, return them
-        return Promise.resolve(indices.map(idx => segmentCache[`${epi}|${idx}`]));
+    console.log(`Fetching ${lookups.length} segments by idx in batch`);
+    try {
+        const response = await fetch('/search/segment/by_idx', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lookups })
+        });
+        
+        const results = await response.json();
+        console.log(`Received ${results.length} segments from batch request`);
+        return results;
+    } catch (error) {
+        console.error('Error fetching segments by idx:', error);
+        return [];
     }
-    
-    // Add uncached segments to the batch queue
-    uncachedIndices.forEach(idx => segmentBatchQueue.add(epi, idx));
-    
-    // Return a promise that resolves when the batch is processed
-    return new Promise((resolve, reject) => {
-        segmentBatchQueue.addPendingPromise(resolve, reject);
-    }).then(() => indices.map(idx => segmentCache[`${epi}|${idx}`]));
 }
 
 /* ========================
@@ -245,7 +231,7 @@ function highlightQuery(txt, charOffset) {
 /* ========================
    6 ‑ Build context & navigation
    ======================== */
-function buildContext(resultItem, seg) {
+function buildContext(resultItem, seg, segmentMap) {
     let curIdx = seg.segment_index;
     const epi = resultItem.dataset.epi;
     const charOffset = parseInt(resultItem.dataset.char);
@@ -253,23 +239,19 @@ function buildContext(resultItem, seg) {
     const ctx = document.createElement('div');
     ctx.className = 'context-container';
     
-    // Fetch segments before and after
-    const fetchSegments = async () => {
-        // Calculate all segment indices we need
-        const indices = [];
+    // Get segments before and after from the segmentMap
+    const getSegments = () => {
+        const segments = [];
         for (let i = curIdx - 5; i <= curIdx + 5; i++) {
             if (i >= 0) {
-                indices.push(i);
+                const key = `${epi}|${i}`;
+                const segment = segmentMap.get(key);
+                if (segment) {
+                    segments.push(segment);
+                }
             }
         }
-        
-        try {
-            const segments = await fetchSegmentsByIdxBatch(epi, indices);
-            return segments;
-        } catch (e) {
-            console.error('Error fetching segments:', e);
-            return [seg]; // Return at least the current segment on error
-        }
+        return segments;
     };
 
     // Render all segments
@@ -303,16 +285,15 @@ function buildContext(resultItem, seg) {
         resultTextContainer.appendChild(ctx);
     }
 
-    // Fetch and render segments
-    fetchSegments().then(segments => {
-        ctx.innerHTML = renderSegments(segments);
-        
-        // Add click handlers to all segments
-        ctx.querySelectorAll('.context-segment').forEach(segment => {
-            segment.addEventListener('click', e => {
-                // Pass both the result item's segment index and the clicked segment's start time
-                playFromSourceAudio(resultItem.dataset.source, resultItem.dataset.seg, e.target.dataset.start);
-            });
+    // Get and render segments from the map
+    const segments = getSegments();
+    ctx.innerHTML = renderSegments(segments);
+    
+    // Add click handlers to all segments
+    ctx.querySelectorAll('.context-segment').forEach(segment => {
+        segment.addEventListener('click', e => {
+            // Pass both the result item's segment index and the clicked segment's start time
+            playFromSourceAudio(resultItem.dataset.source, resultItem.dataset.seg, e.target.dataset.start);
         });
     });
 
@@ -332,8 +313,11 @@ document.addEventListener('DOMContentLoaded', () => {
         container.remove();
     });
 
-    // Create audio players for all result items
-    document.querySelectorAll('.result-item').forEach((item, index) => {
+    // Collect all result items first
+    const resultItems = Array.from(document.querySelectorAll('.result-item'));
+    
+    // Create audio players for all results
+    resultItems.forEach((item, index) => {
         // Add hit index to the result item
         item.dataset.hitIndex = index;
         
@@ -379,14 +363,70 @@ document.addEventListener('DOMContentLoaded', () => {
 
         // Register the audio player
         audioManager.register(audio, playerId);
+    });
 
-        // Load segment data
-        const epi = item.dataset.epi;
-        const char = item.dataset.char;
-        fetchSegmentByChar(epi, char).then(seg => {
-            buildContext(item, seg);
-            item.dataset.ctxLoaded = '1';
+    // Build lookups array for all results
+    const charLookups = resultItems.map(item => ({
+        episode_idx: parseInt(item.dataset.epi),
+        char_offset: parseInt(item.dataset.char)
+    }));
+
+    // First, fetch ALL char-to-segment mappings in one batch
+    fetchSegmentsByCharBatch(charLookups).then(segments => {
+        // Store segment indices in dataset
+        segments.forEach((seg, index) => {
+            if (seg) {
+                resultItems[index].dataset.segIdx = seg.segment_index;
+            }
         });
+
+        // Collect ALL unique episode/segment pairs from ALL results
+        const uniqueSegments = new Set();
+        segments.forEach(seg => {
+            if (seg) {
+                // Add the target segment
+                uniqueSegments.add(`${seg.episode_idx}|${seg.segment_index}`);
+                // Add 5 segments before and after
+                for (let i = -5; i <= 5; i++) {
+                    const surroundingIdx = seg.segment_index + i;
+                    if (surroundingIdx >= 0) {  // Only add non-negative indices
+                        uniqueSegments.add(`${seg.episode_idx}|${surroundingIdx}`);
+                    }
+                }
+            }
+        });
+
+        // Create ONE master lookup for ALL segments
+        const masterLookup = Array.from(uniqueSegments).map(key => {
+            const [episode_idx, segment_idx] = key.split('|').map(Number);
+            return { episode_idx, segment_idx };
+        });
+
+        // Now fetch ALL segments in ONE batch
+        return fetchSegmentsByIdxBatch(masterLookup);
+    }).then(segmentsByIdx => {
+        // Create a map for quick lookup
+        const segmentMap = new Map();
+        segmentsByIdx.forEach(seg => {
+            if (seg) {
+                segmentMap.set(`${seg.episode_idx}|${seg.segment_index}`, seg);
+            }
+        });
+
+        // Build contexts for all results
+        resultItems.forEach(item => {
+            const epi = item.dataset.epi;
+            const segIdx = item.dataset.segIdx;
+            if (segIdx) {
+                const seg = segmentMap.get(`${epi}|${segIdx}`);
+                if (seg) {
+                    buildContext(item, seg, segmentMap);
+                    item.dataset.ctxLoaded = '1';
+                }
+            }
+        });
+    }).catch(error => {
+        console.error('Error loading segments:', error);
     });
 });
 
@@ -433,4 +473,24 @@ function setupLazyLoading() {
         entries.forEach(e => { if (e.isIntersecting) audioQueue.add(e.target); });
     }, { rootMargin: '50px' });
     document.querySelectorAll('.audio-placeholder').forEach(p => io.observe(p));
+}
+
+async function fetchSegmentsByCharBatch(lookups) {
+    if (lookups.length === 0) return [];
+    
+    console.log(`Fetching ${lookups.length} segments by char in batch`);
+    try {
+        const response = await fetch('/search/segment', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ lookups })
+        });
+        
+        const results = await response.json();
+        console.log(`Received ${results.length} segments from batch request`);
+        return results;
+    } catch (error) {
+        console.error('Error fetching segments by char:', error);
+        return [];
+    }
 }
