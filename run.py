@@ -76,8 +76,7 @@ def timeit(name: str):
 
 @timeit("Flask app init")
 def init_app(data_dir: str):
-    app = create_app()
-    app.config["DATA_DIR"] = os.path.abspath(data_dir)
+    app = create_app(data_dir=data_dir)
     return app
 
 @timeit("FileService scan")

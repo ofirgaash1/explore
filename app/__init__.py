@@ -10,19 +10,14 @@ from .services.search import SearchService
 
 load_dotenv() 
 
-def create_app():
+def create_app(data_dir: str, index_file: str = None):
     app = Flask(__name__)
     
-    # Configure base paths
-    app.config['BASE_DIR'] = Path(__file__).parent.parent
-    app.config['JSON_DIR'] = app.config['BASE_DIR'] / "data" / "json"
-    app.config['AUDIO_DIR'] = app.config['BASE_DIR'] / "data" / "audio"
-    app.config['INDEX_FILE'] = os.environ.get('INDEX_FILE')
-    
-    # Ensure directories exist
-    app.config['JSON_DIR'].mkdir(parents=True, exist_ok=True)
-    app.config['AUDIO_DIR'].mkdir(parents=True, exist_ok=True)
-    
+    # Configure paths
+    app.config['DATA_DIR'] = data_dir
+    app.config['AUDIO_DIR'] = Path(data_dir) / "audio"
+    app.config['INDEX_FILE'] = index_file
+        
     # Configure PostHog
     app.config['POSTHOG_API_KEY'] = os.environ.get('POSTHOG_API_KEY', '')
     app.config['POSTHOG_HOST'] = os.environ.get('POSTHOG_HOST', 'https://app.posthog.com')

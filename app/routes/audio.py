@@ -1,6 +1,5 @@
 from flask import Blueprint, send_file, current_app, request, Response
 from urllib.parse import unquote
-from ..services.file_service import FileService
 from ..routes.auth import login_required
 import os
 import mimetypes
@@ -8,6 +7,7 @@ import re
 import time
 import logging
 import uuid
+import glob
 
 bp = Blueprint('audio', __name__)
 logger = logging.getLogger(__name__)
@@ -104,25 +104,33 @@ def serve_audio(filename):
         base_name = filename.rsplit('.', 1)[0]
         logger.info(f"[TIMING] [REQ:{request_id}] Requested audio for base name: {base_name}")
         
-        file_service = FileService(current_app)
-        available_files = file_service.get_available_files()
-        
-        # Try to find an exact match first
-        if base_name in available_files:
-            file_info = available_files[base_name]
-            logger.info(f"[TIMING] [REQ:{request_id}] Found exact match: {file_info['audio_path']}")
-            return send_range_file(file_info['audio_path'], request_id)
+        # Get audio directory from config
+        audio_dir = current_app.config.get('AUDIO_DIR')
+        if not audio_dir:
+            raise ValueError("AUDIO_DIR not configured in application")
             
-        # If no exact match, try URL-decoded version
+        # Try to find the audio file using glob pattern
+        search_pattern = os.path.join(audio_dir, '*', f"{base_name}.opus")
+        matching_files = glob.glob(search_pattern)
+        
+        if matching_files:
+            audio_path = matching_files[0]
+            logger.info(f"[TIMING] [REQ:{request_id}] Found audio file: {audio_path}")
+            return send_range_file(audio_path, request_id)
+            
+        # If no match found, try with URL-decoded version
         decoded_name = unquote(base_name)
         logger.info(f"[TIMING] [REQ:{request_id}] Trying decoded name: {decoded_name}")
         
-        if decoded_name in available_files:
-            file_info = available_files[decoded_name]
-            logger.info(f"[TIMING] [REQ:{request_id}] Found match after decoding: {file_info['audio_path']}")
-            return send_range_file(file_info['audio_path'], request_id)
+        search_pattern = os.path.join(audio_dir, '*', f"{decoded_name}.opus")
+        matching_files = glob.glob(search_pattern)
+        
+        if matching_files:
+            audio_path = matching_files[0]
+            logger.info(f"[TIMING] [REQ:{request_id}] Found audio file after decoding: {audio_path}")
+            return send_range_file(audio_path, request_id)
             
-        logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found. Available files: {list(available_files.keys())}")
+        logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found for: {filename}")
         return f"Audio file not found for {filename}", 404
         
     except Exception as e:
@@ -136,13 +144,17 @@ def serve_audio(filename):
 @login_required
 def check_audio(filename):
     try:
-        file_service = FileService(current_app)
-        available_files = file_service.get_available_files()
-        
+        audio_dir = current_app.config.get('AUDIO_DIR')
+        if not audio_dir:
+            return "AUDIO_DIR not configured", 500
+            
         base_name = filename.rsplit('.', 1)[0]
-        if base_name in available_files:
-            file_info = available_files[base_name]
-            return f"File exists! Size: {os.path.getsize(file_info['audio_path'])} bytes"
+        search_pattern = os.path.join(audio_dir, '*', f"{base_name}.opus")
+        matching_files = glob.glob(search_pattern)
+        
+        if matching_files:
+            audio_path = matching_files[0]
+            return f"File exists! Size: {os.path.getsize(audio_path)} bytes"
             
         return "File not found!", 404
     except Exception as e:

@@ -20,5 +20,5 @@ else:
     parser.add_argument('--data-dir', type=str, help='Path to the data directory', default='/root/data')
     args, unknown = parser.parse_known_args()
     
-    # Set the data directory in app config
-    app.config['DATA_DIR'] = os.path.abspath(args.data_dir) 
+    # Create app with data directory
+    app = create_app(data_dir=os.path.abspath(args.data_dir))
