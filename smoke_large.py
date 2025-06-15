@@ -5,7 +5,7 @@ Smoke-test the Explore search stack on a real corpus.
 * Builds the TranscriptIndex
 * Runs three hand-picked literal queries   → times + hit counts
 * Runs three regex queries                 → times + hit counts
-* For every query, fetches one random hit’s Segment and checks:
+* For every query, fetches one random hit's Segment and checks:
       • query text is inside segment.text
       • start_sec is non-negative
 * Samples 100 random words that appear in the corpus and
@@ -17,7 +17,7 @@ Run:  python scripts/smoke_large.py
 """
 
 from __future__ import annotations
-import json, random, re, time
+import random, re, time
 from collections import Counter
 from pathlib import Path
 from typing import Iterable
@@ -32,7 +32,7 @@ HAND_QUERIES   = ["שלום", "מתושלח", "אם"]           # literal
 REGEX_QUERIES  = [r"\b[Aa]udio\b", r"(בית|בית־ספר)", r"^שלום"]   # regex
 BATCH_SIZE     = 100          # random words to test (search hits ≥ 1)
 BATCH_SEGCHK   = 20           # random hits to verify segment lookup
-WORD_RE        = re.compile(r"\w{4,}", re.UNICODE)  # ≥4-char “words”
+WORD_RE        = re.compile(r"\w{4,}", re.UNICODE)  # ≥4-char "words"
 
 # ---------- helpers -------------------------------------------------------- #
 def time_call(fn, *args, **kwargs):
@@ -66,8 +66,8 @@ def assert_segment_contains(svc: SearchService, hit: SearchHit, needle: str):
 def main() -> None:
     print("🔧  Building index …")
     fs   = FileService(JSON_DIR)
-    idxm = IndexManager(fs)
-    _, build_sec = time_call(idxm.rebuild_async, block=True)
+    _, build_sec = time_call(IndexManager, fs)
+    idxm = _
     epi_cnt = len(idxm.get().ids)
     print(f"✅  {epi_cnt:,} episodes indexed in {build_sec:.1f} s")
 

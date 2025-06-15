@@ -1,4 +1,5 @@
-import json
+import orjson
+import gzip
 from pathlib import Path
 
 from app.services.file_service import FileService
@@ -13,11 +14,11 @@ def test_segment_lookup(tmp_path: Path):
         {"start": 0.0, "text": "שלום עולם"},
         {"start": 5.0, "text": "מה שלומך"},
     ]}
-    (tr_dir / "s.json").write_text(json.dumps(sample), "utf-8")
+    with gzip.open(tr_dir / "s.json.gz", 'wb') as f:
+        f.write(orjson.dumps(sample))
 
     fs   = FileService(tr_dir)
     idxm = IndexManager(fs)
-    idxm.rebuild_async(block=True)
     idx  = idxm.get()
 
     # hit on second segment ("מה")

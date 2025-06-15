@@ -26,6 +26,8 @@ from app.services.search import SearchService
 parser = argparse.ArgumentParser(description="Run ivrit.ai Explore server")
 parser.add_argument("--data-dir", default="../data",
                     help="Path holding 'json/' and 'audio/' sub‑dirs (default ../data)")
+parser.add_argument("--index-file", default=None,
+                    help="Path to custom index file (default: auto-generated in data directory)")
 parser.add_argument("--force-reindex", action="store_true",
                     help="Rebuild in‑memory index even if it seems fresh")
 parser.add_argument("--port", type=int, default=443,
@@ -34,6 +36,11 @@ parser.add_argument("--dev", action="store_true", help="Run in HTTP dev mode (no
 parser.add_argument("--ssl-cert", default="/etc/letsencrypt/live/explore.ivrit.ai/fullchain.pem")
 parser.add_argument("--ssl-key",  default="/etc/letsencrypt/live/explore.ivrit.ai/privkey.pem")
 args = parser.parse_args()
+
+# Set environment variables for dev mode
+if args.dev:
+    os.environ['FLASK_ENV'] = 'development'
+    os.environ['TS_USER_EMAIL'] = 'dev@ivrit.ai'
 
 # ---------------------------------------------------------------------------
 # 2. Logging to file + stdout
@@ -97,12 +104,10 @@ def init_file_service(json_dir: Path, audio_dir: Path):
     return fs
 
 @timeit("Index build")
-def build_index(fs: FileService, force: bool):
-    idx_mgr = IndexManager(fs)
+def build_index(fs: FileService, force: bool, index_file: str | None = None):
     if force:
-        log.info("--force-reindex supplied; rebuilding index …")
-    idx_mgr.rebuild_async(block=True)  # always blocks so server is ready
-    return idx_mgr
+        log.info("--force-reindex supplied; building fresh index …")
+    return IndexManager(fs, index_file=index_file)
 
 # ---------------------------------------------------------------------------
 # 5. Wire everything up
@@ -118,19 +123,22 @@ if not json_dir.is_dir():
 
 app = init_app(str(data_root))
 with app.app_context():
-    file_service   = init_file_service(json_dir, audio_dir)
-    index_manager  = build_index(file_service, force=args.force_reindex)
-    search_service = SearchService(index_manager)
-
+    file_service = init_file_service(json_dir, audio_dir)
+    from app import init_index_manager
+    index_manager = init_index_manager(
+        app,
+        file_service=file_service,
+        index_file=args.index_file,
+        force_reindex=args.force_reindex
+    )
 
     # expose to blueprints
-    app.config["FILE_SERVICE"]   = file_service
-    app.config["SEARCH_SERVICE"] = search_service
+    app.config["FILE_SERVICE"] = file_service
 
     # make main blueprint globals match
     from app.routes import main as main_bp
-    main_bp.file_service   = file_service
-    main_bp.search_service = search_service
+    main_bp.file_service = file_service
+    main_bp.search_service = app.config["SEARCH_SERVICE"]
     
 
     # memory diagnostics (optional)
@@ -149,7 +157,7 @@ if __name__ == "__main__":
     host = "0.0.0.0"
     if args.dev:
         log.info("DEV mode – http://localhost:5000")
-        app.run(host=host, port=5000, debug=True, threaded=True)
+        app.run(host=host, port=5000, debug=False, threaded=True)
     else:
         if not (Path(args.ssl_cert).exists() and Path(args.ssl_key).exists()):
             log.error("SSL cert/key not found. Use --dev for HTTP mode or supply valid paths.")

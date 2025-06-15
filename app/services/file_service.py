@@ -2,14 +2,22 @@ from __future__ import annotations
 from pathlib import Path
 from dataclasses import dataclass
 from typing import List, NamedTuple
+import gzip
+import orjson
+import logging
 
-_JSON_SUFFIX = ".json"          # transcripts
+_JSON_SUFFIX = ".json.gz"          # gzipped transcripts
 _AUDIO_SUFFIX = ".opus"         # keep opus-only for now
 
 
 class FileRecord(NamedTuple):
     id: str
     json_path: Path
+
+    def read_json(self) -> dict | list:
+        """Read and parse the gzipped JSON file."""
+        with gzip.open(self.json_path, 'rb') as fh:
+            return orjson.loads(fh.read())
 
 
 @dataclass(slots=True)
@@ -31,16 +39,16 @@ class FileService:
     def _scan(self) -> list[FileRecord]:
         """Return one FileRecord per transcript JSON.
 
-        * Supports both legacy flat files:   <id>.json
-        * …and new nested files:            <id>/full_transcript.json
+        * Supports both legacy flat files:   <id>.json.gz
+        * …and new nested files:            <id>/full_transcript.json.gz
         """
         recs: list[FileRecord] = []
         for p in self.transcripts_dir.rglob(f"*{_JSON_SUFFIX}"):
             # nested layout → use directory name as the recording ID
-            if p.name == "full_transcript.json":
+            if p.name == "full_transcript.json.gz":
                 rec_id = p.parent.name
             else:                              # flat layout
-                rec_id = p.stem
+                rec_id = p.stem.removesuffix('.json')  # Remove both .json and .gz
             recs.append(FileRecord(rec_id, p))
 
         # complain loudly if we picked up duplicates

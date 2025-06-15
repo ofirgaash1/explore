@@ -22,7 +22,6 @@ def search():
 
 @bp.route("/snippet", methods=["GET"])
 def snippet():
-    print("Snippet route called with args:", request.args)
     search_svc = current_app.config["SEARCH_SERVICE"]
     index_mgr = search_svc._index_mgr
     
@@ -40,7 +39,6 @@ def snippet():
 
 @bp.route("/segment", methods=["POST"])
 def get_segment():
-    print("segment route called with args:", request.json)
     search_svc = current_app.config["SEARCH_SERVICE"]
     
     try:
@@ -73,7 +71,6 @@ def get_segment():
 
 @bp.route("/segment/by_idx", methods=["POST"])
 def get_segments_by_idx():
-    print("segment/by_idx route called with args:", request.json)
     search_svc = current_app.config["SEARCH_SERVICE"]
     index_mgr = search_svc._index_mgr.get()
     
