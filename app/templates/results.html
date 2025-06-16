@@ -27,10 +27,6 @@
 <form action="{{ url_for('main.search') }}" method="GET" class="search-form">
   <input type="text" name="q" placeholder="הזן מונח לחיפוש…" value="{{ query }}">
   <div class="search-options">
-    <label class="checkbox-container">
-      <input type="checkbox" name="regex" id="regex-checkbox" {% if regex %}checked{% endif %}>
-      <span class="checkbox-label">השתמש בתבנית regex</span>
-    </label>
     <div class="input-container">
       <label for="max-results">תוצאות לעמוד:</label>
       <input type="number" name="max_results" id="max-results"
@@ -78,20 +74,14 @@
       <span class="result-count">{{ source_results|length }} תוצאות</span>
 
       <div class="source-actions">
-        <a href="{{ url_for('export.export_source_files',
-                            source=source, type='json') }}"
-           class="btn btn-export">JSON</a>
-        <a href="{{ url_for('export.export_source_files',
-                            source=source, type='audio') }}"
-           class="btn btn-export">אודיו</a>
       </div>
 
       {# Direct audio container instead of placeholder #}
       <div class="audio-container source-audio-container"
            data-source="{{ source|urlencode }}"
-           data-format="{{ available_files[source].audio_format
-                           if source in available_files else '' }}"
-           data-start="{{ source_results[0].start_sec if source_results else 0 }}">
+           data-format="{{ available_files[source].audio_format if source in available_files else '' }}"
+           data-start="{{ source_results[0].start_sec if source_results else 0 }}"
+           data-end="{{ source_results[-1].end_sec if source_results else 0 }}">
       </div>
     </div>
 
@@ -103,10 +93,18 @@
            data-epi="{{ result.episode_idx }}"
            data-char="{{ result.char_offset }}"
            data-seg="{{ result.segment_idx }}"
-           data-start="{{ '%.2f' | format(result.start_sec) }}">
+           data-start="{{ '%.2f' | format(result.start_sec) }}"
+           data-end="{{ '%.2f' | format(result.end_sec) }}">
 
         <div class="result-content">
           <div class="result-text-container">
+            <div class="result-actions">
+              <a href="{{ url_for('export.export_segment',
+                                source=source,
+                                start=result.start_sec,
+                                end=result.end_sec) }}"
+                 class="btn btn-export">ייצא אודיו</a>
+            </div>
             <div class="context-container loading">טוען...</div>
           </div>
         </div>

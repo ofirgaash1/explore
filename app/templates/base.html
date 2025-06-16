@@ -40,7 +40,6 @@
                 const formData = new FormData(e.target);
                 posthog.capture('search_form_submitted', {
                     query: formData.get('q'),
-                    use_regex: formData.get('regex') ? true : false,
                     use_substring: formData.get('substring') ? true : false,
                     max_results: formData.get('max_results')
                 });

@@ -91,10 +91,11 @@ function loadAudio(placeholder) {
     const srcId = placeholder.dataset.source;
     const fmt   = placeholder.dataset.format || 'opus';
     const start = parseFloat(placeholder.dataset.start) || 0;
+    const end = parseFloat(placeholder.dataset.end) || 0;
     const audioUrl = `/audio/${srcId}.${fmt}#t=${start}`;
     const playerId = `audio-${srcId}-${start}`;
 
-    timingLogger.start('audio_loading', { source_id: srcId, start_time: start });
+    timingLogger.start('audio_loading', { source_id: srcId, start_time: start, end_time: end });
 
     const cont  = document.createElement('div'); 
     cont.className = 'audio-container';
@@ -263,6 +264,7 @@ function buildContext(resultItem, seg, segmentMap) {
             return `
                 <div class="context-segment ${s.segment_index === curIdx ? 'current-segment' : ''}"
                      data-start="${s.start_sec}" 
+                     data-end="${s.end_sec}"
                      data-seg="${s.segment_index}">
                     ${text}
                 </div>
@@ -276,11 +278,15 @@ function buildContext(resultItem, seg, segmentMap) {
     // Find the result text container and append the context
     const resultTextContainer = resultItem.querySelector('.result-text-container');
     if (resultTextContainer) {
-        // Clear any existing content except the audio player
+        // Clear any existing content except the audio player and result actions
         const audioPlayer = resultTextContainer.querySelector('.audio-container');
+        const resultActions = resultTextContainer.querySelector('.result-actions');
         resultTextContainer.innerHTML = '';
         if (audioPlayer) {
             resultTextContainer.appendChild(audioPlayer);
+        }
+        if (resultActions) {
+            resultTextContainer.appendChild(resultActions);
         }
         resultTextContainer.appendChild(ctx);
     }
@@ -292,8 +298,8 @@ function buildContext(resultItem, seg, segmentMap) {
     // Add click handlers to all segments
     ctx.querySelectorAll('.context-segment').forEach(segment => {
         segment.addEventListener('click', e => {
-            // Pass both the result item's segment index and the clicked segment's start time
-            playFromSourceAudio(resultItem.dataset.source, resultItem.dataset.seg, e.target.dataset.start);
+            // Pass the hit index and the clicked segment's start time
+            playFromSourceAudio(resultItem.dataset.hitIndex, e.target.dataset.start);
         });
     });
 
@@ -433,11 +439,11 @@ document.addEventListener('DOMContentLoaded', () => {
 /* ========================
    7 ‑ Audio helper to seek header player
    ======================== */
-function playFromSourceAudio(sourceId, segIdx, startTime) {
-    // Find the result item that matches this source and segment
-    const resultItem = document.querySelector(`.result-item[data-source="${sourceId}"][data-seg="${segIdx}"]`);
+function playFromSourceAudio(hitIndex, startTime) {
+    // Find the result item that matches this hit index
+    const resultItem = document.querySelector(`.result-item[data-hit-index="${hitIndex}"]`);
     if (!resultItem) {
-        console.warn(`Could not find result item for source: ${sourceId} and segment: ${segIdx}`);
+        console.warn(`Could not find result item for hit index: ${hitIndex}`);
         return;
     }
 
@@ -454,6 +460,51 @@ function playFromSourceAudio(sourceId, segIdx, startTime) {
     // Set the start time and load the audio
     audio.currentTime = parseFloat(startTime);
     audio.preload = 'metadata'; // Start loading after setting the time
+    
+    // Get all segments in the context
+    const contextContainer = resultItem.querySelector('.context-container');
+    if (!contextContainer) {
+        console.warn('Could not find context container');
+        return;
+    }
+
+    // Find the last segment to get its end time
+    const segments = contextContainer.querySelectorAll('.context-segment');
+    const lastSegment = segments[segments.length - 1];
+    const endTime = parseFloat(lastSegment.dataset.end) || 0;
+
+    // Remove highlighting from all segments
+    segments.forEach(seg => seg.classList.remove('playing-segment'));
+    
+    // Add timeupdate listener to stop at end time and update highlighting
+    const timeUpdateHandler = () => {
+        // Find the currently playing segment
+        let currentSegment = null;
+        for (const seg of segments) {
+            const segStart = parseFloat(seg.dataset.start);
+            const segEnd = parseFloat(seg.dataset.end);
+            if (audio.currentTime >= segStart && audio.currentTime < segEnd) {
+                currentSegment = seg;
+                break;
+            }
+        }
+
+        // Update highlighting
+        segments.forEach(seg => seg.classList.remove('playing-segment'));
+        if (currentSegment) {
+            currentSegment.classList.add('playing-segment');
+        }
+
+        // Stop at end time
+        if (audio.currentTime >= endTime) {
+            audio.pause();
+            audio.currentTime = parseFloat(startTime);
+            audio.removeEventListener('timeupdate', timeUpdateHandler);
+            // Remove highlighting when stopped
+            segments.forEach(seg => seg.classList.remove('playing-segment'));
+        }
+    };
+    audio.addEventListener('timeupdate', timeUpdateHandler);
     
     // Play the audio
     audio.play().catch(err => {

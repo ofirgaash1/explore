@@ -57,7 +57,7 @@ class AnalyticsService:
         except Exception as e:
             logger.error(f"Failed to capture event: {str(e)}")
     
-    def capture_search(self, query, use_regex=False, use_substring=False, max_results=None, 
+    def capture_search(self, query, use_substring=False, max_results=None, 
                       page=1, execution_time_ms=None, results_count=0, total_results=0, progressive=False):
         """Track search events with detailed properties"""
         if self.disabled:
@@ -66,7 +66,6 @@ class AnalyticsService:
         try:
             properties = {
                 'query': query,
-                'use_regex': use_regex,
                 'use_substring': use_substring,
                 'max_results': max_results,
                 'page': page,

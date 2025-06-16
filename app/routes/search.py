@@ -58,6 +58,7 @@ def get_segment():
                     "char_offset": char,
                     "segment_index": seg.seg_idx,
                     "start_sec": seg.start_sec,
+                    "end_sec": seg.end_sec,
                     "text": seg.text,
                 })
             except (KeyError, ValueError) as e:
@@ -89,6 +90,7 @@ def get_segments_by_idx():
                     "episode_idx": epi,
                     "segment_index": seg.seg_idx,
                     "start_sec": seg.start_sec,
+                    "end_sec": seg.end_sec,
                     "text": seg.text
                 })
             except (KeyError, ValueError, IndexError) as e:

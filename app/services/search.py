@@ -25,12 +25,12 @@ class SearchService:
         logger.info(f"SearchService initialized with {len(idx.text)} texts, total size: {total_chars:,} characters")
 
     # ­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­­ #
-    def search(self, query: str, *, regex: bool = False) -> List[SearchHit]:
+    def search(self, query: str) -> List[SearchHit]:
         start_time = time.perf_counter()
         idx = self._index_mgr.get()
         
         # Log search parameters
-        logger.info(f"Starting search for query: '{query}' (regex={regex})")
+        logger.info(f"Starting search for query: '{query}'")
         
         matcher = _make_matcher(query)
         matcher_time = time.perf_counter() - start_time

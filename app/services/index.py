@@ -19,7 +19,8 @@ class TranscriptIndex:
     ids:  List[str] = field(default_factory=list)
     text: List[str] = field(default_factory=list)   # raw, full-episode string
     seg_offsets: List[List[int]]       = field(default_factory=list)   
-    seg_times:   List[List[float]]     = field(default_factory=list)
+    seg_start_times:   List[List[float]]     = field(default_factory=list)
+    seg_end_times:   List[List[float]]     = field(default_factory=list)
 
     def to_dict(self) -> dict:
         """Convert index to a dictionary for serialization."""
@@ -32,7 +33,8 @@ class TranscriptIndex:
             ids=data["ids"],
             text=data["text"],
             seg_offsets=data["seg_offsets"],
-            seg_times=data["seg_times"]
+            seg_start_times=data["seg_start_times"],
+            seg_end_times=data["seg_end_times"]
         )
 
 
@@ -81,10 +83,10 @@ class IndexManager:
         
         # Time string conversion
         t_conv = time.perf_counter()
-        full, offs, tms = _episode_to_string_and_meta(data)
+        full, offs, tms, etms = _episode_to_string_and_meta(data)
         conv_ms = (time.perf_counter() - t_conv) * 1000
         
-        return rec_idx, rec.id, {"full": full, "offs": offs, "tms": tms}, read_ms, conv_ms
+        return rec_idx, rec.id, {"full": full, "offs": offs, "tms": tms, "etms": etms}, read_ms, conv_ms
 
     def _build(self) -> TranscriptIndex:
         idx = TranscriptIndex()
@@ -113,7 +115,8 @@ class IndexManager:
                     idx.ids.append(rec_id)
                     idx.text.append(data["full"])
                     idx.seg_offsets.append(data["offs"])
-                    idx.seg_times.append(data["tms"])
+                    idx.seg_start_times.append(data["tms"])
+                    idx.seg_end_times.append(data["etms"])
                     
                     append_ms = (time.perf_counter() - t_append) * 1000
                     total_ms = read_ms + conv_ms + append_ms
@@ -126,17 +129,12 @@ class IndexManager:
         return idx
 
 # helper converts Kaldi-style or plain list JSON to a single string
-def _episode_to_string_and_meta(data: dict | list) -> tuple[str, list[int], list[float]]:
+def _episode_to_string_and_meta(data: dict | list) -> tuple[str, list[int], list[float], list[float]]:
     """
     Returns:
-        full_text,  offsets[],  start_times[]
+        full_text,  offsets[],  start_times[], end_times[]
     Offsets are char positions *within* full_text where each segment begins.
     """
-    # # 1️⃣ fast path
-    # if isinstance(data, dict) and isinstance(data.get("text"), str):
-    #     full_text = data["text"]
-
-    # 2️⃣ segments list extraction
     if isinstance(data, dict) and "segments" in data:
         segs = data["segments"]
     elif isinstance(data, list):
@@ -144,16 +142,17 @@ def _episode_to_string_and_meta(data: dict | list) -> tuple[str, list[int], list
     else:
         raise ValueError("Unrecognised transcript JSON structure")
 
-    offsets, times, parts = [], [], []
+    offsets, start_times, end_times, parts = [], [], [], []
     cursor = 0
     for seg in segs:
         offsets.append(cursor)
-        times.append(float(seg["start"]))
+        start_times.append(float(seg["start"]))
+        end_times.append(float(seg["end"]))
         part = seg["text"]
         parts.append(part)
         cursor += len(part) + 1      # +1 for the space we'll add below
     full_text = " ".join(parts)
-    return full_text, offsets, times
+    return full_text, offsets, start_times, end_times
 
 
 # ------------------------------------------------------------------ #
@@ -163,6 +162,7 @@ class Segment:
     seg_idx: int
     text: str
     start_sec: float
+    end_sec: float
 
 
 def segment_for_hit(index: TranscriptIndex, episode_idx: int,
@@ -177,7 +177,8 @@ def segment_for_hit(index: TranscriptIndex, episode_idx: int,
         episode_idx=episode_idx,
         seg_idx=i,
         text=index.text[episode_idx][start_off:end_off].strip(),
-        start_sec=index.seg_times[episode_idx][i],
+        start_sec=index.seg_start_times[episode_idx][i],
+        end_sec=index.seg_end_times[episode_idx][i],
     )
 
 def segment_by_idx(index: TranscriptIndex, episode_idx: int,
@@ -191,5 +192,6 @@ def segment_by_idx(index: TranscriptIndex, episode_idx: int,
         episode_idx=episode_idx,
         seg_idx=seg_idx,
         text=index.text[episode_idx][start_off:end_off].strip(),
-        start_sec=index.seg_times[episode_idx][seg_idx],
+        start_sec=index.seg_start_times[episode_idx][seg_idx],
+        end_sec=index.seg_end_times[episode_idx][seg_idx],
     )

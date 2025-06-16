@@ -28,10 +28,9 @@ def home():
 
 @bp.route('/search')
 @login_required
-@track_performance('search_executed', include_args=['query', 'regex', 'page'])
+@track_performance('search_executed', include_args=['query', 'page'])
 def search():
     query      = request.args.get('q', '').strip()
-    use_regex  = request.args.get('regex', '').lower() in ('true', '1', 'on')
     per_page   = int(request.args.get('max_results', 100))
     page       = max(1, int(request.args.get('page', 1)))
 
@@ -41,7 +40,7 @@ def search():
     if search_service is None:
         search_service = SearchService(IndexManager(file_service))
 
-    hits = search_service.search(query, regex=use_regex)
+    hits = search_service.search(query)
     total = len(hits)
 
     # simple slicing
@@ -60,6 +59,7 @@ def search():
             "source":       search_service._index_mgr.get().ids[h.episode_idx],
             "segment_idx":  seg.seg_idx,
             "start_sec":    seg.start_sec,
+            "end_sec":      seg.end_sec,
         })
 
     pagination = {
@@ -77,9 +77,7 @@ def search():
     return render_template('results.html',
                            query=query,
                            results=records,
-                           pagination=pagination,
-                           regex=use_regex,
-                           max_results=per_page)
+                           pagination=pagination)
 
 @bp.route('/privacy')
 def privacy_policy():
