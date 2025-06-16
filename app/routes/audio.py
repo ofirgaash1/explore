@@ -1,6 +1,5 @@
 from flask import Blueprint, send_file, current_app, request, Response
 from urllib.parse import unquote
-from ..services.file_service import FileService
 from ..routes.auth import login_required
 import os
 import mimetypes
@@ -8,6 +7,7 @@ import re
 import time
 import logging
 import uuid
+import glob
 
 bp = Blueprint('audio', __name__)
 logger = logging.getLogger(__name__)
@@ -26,44 +26,62 @@ def send_range_file(path, request_id=None):
     size = os.path.getsize(path)
     content_type = mimetypes.guess_type(path)[0] or 'application/octet-stream'
 
+    def generate_chunks():
+        chunk_size = 8192  # 8KB chunks
+        with open(path, 'rb') as f:
+            if range_header:
+                # Example Range: bytes=12345-
+                byte1, byte2 = 0, None
+                m = re.search(r'bytes=(\d+)-(\d*)', range_header)
+                if m:
+                    byte1 = int(m.group(1))
+                    if m.group(2):
+                        byte2 = int(m.group(2))
+                if byte2 is None:
+                    byte2 = size - 1
+                length = byte2 - byte1 + 1
+                
+                if request_id:
+                    logger.info(f"[TIMING] [REQ:{request_id}] Serving range request: bytes {byte1}-{byte2}/{size}")
+                
+                f.seek(byte1)
+                remaining = length
+                while remaining > 0:
+                    chunk = f.read(min(chunk_size, remaining))
+                    if not chunk:
+                        break
+                    remaining -= len(chunk)
+                    yield chunk
+            else:
+                if request_id:
+                    logger.info(f"[TIMING] [REQ:{request_id}] Serving full file: {size} bytes")
+                
+                while True:
+                    chunk = f.read(chunk_size)
+                    if not chunk:
+                        break
+                    yield chunk
+
     if range_header:
-        # Example Range: bytes=12345-
-        byte1, byte2 = 0, None
         m = re.search(r'bytes=(\d+)-(\d*)', range_header)
         if m:
             byte1 = int(m.group(1))
-            if m.group(2):
-                byte2 = int(m.group(2))
-        if byte2 is None:
-            byte2 = size - 1
-        length = byte2 - byte1 + 1
-        
-        if request_id:
-            logger.info(f"[TIMING] [REQ:{request_id}] Serving range request: bytes {byte1}-{byte2}/{size}")
-
-        with open(path, 'rb') as f:
-            f.seek(byte1)
-            data = f.read(length)
-
-        resp = Response(data, 206, mimetype=content_type)
-        resp.headers.add('Content-Range', f'bytes {byte1}-{byte2}/{size}')
-        resp.headers.add('Accept-Ranges', 'bytes')
-        resp.headers.add('Content-Length', str(length))
-        
-        if request_id:
-            duration_ms = (time.time() - start_time) * 1000
-            logger.info(f"[TIMING] [REQ:{request_id}] Range file served in {duration_ms:.2f}ms")
-        
-        return resp
+            byte2 = int(m.group(2)) if m.group(2) else size - 1
+            length = byte2 - byte1 + 1
+            
+            resp = Response(generate_chunks(), 206, mimetype=content_type)
+            resp.headers.add('Content-Range', f'bytes {byte1}-{byte2}/{size}')
+            resp.headers.add('Accept-Ranges', 'bytes')
+            resp.headers.add('Content-Length', str(length))
+            
+            if request_id:
+                duration_ms = (time.time() - start_time) * 1000
+                logger.info(f"[TIMING] [REQ:{request_id}] Range file served in {duration_ms:.2f}ms")
+            
+            return resp
 
     # No Range: return full file
-    if request_id:
-        logger.info(f"[TIMING] [REQ:{request_id}] Serving full file: {size} bytes")
-        
-    with open(path, 'rb') as f:
-        data = f.read()
-
-    resp = Response(data, 200, mimetype=content_type)
+    resp = Response(generate_chunks(), 200, mimetype=content_type)
     resp.headers.add('Accept-Ranges', 'bytes')
     resp.headers.add('Content-Length', str(size))
     
@@ -86,25 +104,33 @@ def serve_audio(filename):
         base_name = filename.rsplit('.', 1)[0]
         logger.info(f"[TIMING] [REQ:{request_id}] Requested audio for base name: {base_name}")
         
-        file_service = FileService(current_app)
-        available_files = file_service.get_available_files()
-        
-        # Try to find an exact match first
-        if base_name in available_files:
-            file_info = available_files[base_name]
-            logger.info(f"[TIMING] [REQ:{request_id}] Found exact match: {file_info['audio_path']}")
-            return send_range_file(file_info['audio_path'], request_id)
+        # Get audio directory from config
+        audio_dir = current_app.config.get('AUDIO_DIR')
+        if not audio_dir:
+            raise ValueError("AUDIO_DIR not configured in application")
             
-        # If no exact match, try URL-decoded version
+        # Try to find the audio file using glob pattern
+        search_pattern = os.path.join(audio_dir, '*', f"{base_name}.opus")
+        matching_files = glob.glob(search_pattern)
+        
+        if matching_files:
+            audio_path = matching_files[0]
+            logger.info(f"[TIMING] [REQ:{request_id}] Found audio file: {audio_path}")
+            return send_range_file(audio_path, request_id)
+            
+        # If no match found, try with URL-decoded version
         decoded_name = unquote(base_name)
         logger.info(f"[TIMING] [REQ:{request_id}] Trying decoded name: {decoded_name}")
         
-        if decoded_name in available_files:
-            file_info = available_files[decoded_name]
-            logger.info(f"[TIMING] [REQ:{request_id}] Found match after decoding: {file_info['audio_path']}")
-            return send_range_file(file_info['audio_path'], request_id)
+        search_pattern = os.path.join(audio_dir, '*', f"{decoded_name}.opus")
+        matching_files = glob.glob(search_pattern)
+        
+        if matching_files:
+            audio_path = matching_files[0]
+            logger.info(f"[TIMING] [REQ:{request_id}] Found audio file after decoding: {audio_path}")
+            return send_range_file(audio_path, request_id)
             
-        logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found. Available files: {list(available_files.keys())}")
+        logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found for: {filename}")
         return f"Audio file not found for {filename}", 404
         
     except Exception as e:
@@ -118,13 +144,17 @@ def serve_audio(filename):
 @login_required
 def check_audio(filename):
     try:
-        file_service = FileService(current_app)
-        available_files = file_service.get_available_files()
-        
+        audio_dir = current_app.config.get('AUDIO_DIR')
+        if not audio_dir:
+            return "AUDIO_DIR not configured", 500
+            
         base_name = filename.rsplit('.', 1)[0]
-        if base_name in available_files:
-            file_info = available_files[base_name]
-            return f"File exists! Size: {os.path.getsize(file_info['audio_path'])} bytes"
+        search_pattern = os.path.join(audio_dir, '*', f"{base_name}.opus")
+        matching_files = glob.glob(search_pattern)
+        
+        if matching_files:
+            audio_path = matching_files[0]
+            return f"File exists! Size: {os.path.getsize(audio_path)} bytes"
             
         return "File not found!", 404
     except Exception as e:

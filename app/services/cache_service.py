@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from functools import lru_cache
-import json
+import orjson
 
 class CacheService:
     def __init__(self, cache_duration=timedelta(minutes=5)):
@@ -33,8 +33,8 @@ cache = CacheService()
 @lru_cache(maxsize=128)
 def load_json_file(json_path):
     try:
-        with open(json_path, 'r', encoding='utf-8') as f:
-            return json.load(f)
+        with open(json_path, 'rb') as f:
+            return orjson.loads(f.read())
     except Exception as e:
         print(f"Error loading JSON file {json_path}: {e}")
         return None 
