@@ -41,7 +41,7 @@
                 posthog.capture('search_form_submitted', {
                     query: formData.get('q'),
                     use_substring: formData.get('substring') ? true : false,
-                    max_results: formData.get('max_results')
+                    max_results_per_page: formData.get('max_results_per_page')
                 });
             }
         });

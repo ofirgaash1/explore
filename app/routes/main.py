@@ -31,7 +31,7 @@ def home():
 @track_performance('search_executed', include_args=['query', 'page'])
 def search():
     query      = request.args.get('q', '').strip()
-    per_page   = int(request.args.get('max_results', 100))
+    per_page   = int(request.args.get('max_results_per_page', 100))
     page       = max(1, int(request.args.get('page', 1)))
 
     global search_service, file_service
@@ -77,7 +77,8 @@ def search():
     return render_template('results.html',
                            query=query,
                            results=records,
-                           pagination=pagination)
+                           pagination=pagination,
+                           max_results_per_page=per_page)
 
 @bp.route('/privacy')
 def privacy_policy():
