@@ -40,13 +40,13 @@ class FileService:
         """Return one FileRecord per transcript JSON.
 
         * Supports both legacy flat files:   <id>.json.gz
-        * …and new nested files:            <id>/full_transcript.json.gz
+        * …and new nested files:            <source>/<id>/full_transcript.json.gz
         """
         recs: list[FileRecord] = []
         for p in self.transcripts_dir.rglob(f"*{_JSON_SUFFIX}"):
-            # nested layout → use directory name as the recording ID
+            # nested layout → use source/directory name as the recording ID
             if p.name == "full_transcript.json.gz":
-                rec_id = p.parent.name
+                rec_id = f"{p.parent.parent.name}/{p.parent.name}"
             else:                              # flat layout
                 rec_id = p.stem.removesuffix('.json')  # Remove both .json and .gz
             recs.append(FileRecord(rec_id, p))

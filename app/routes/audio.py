@@ -100,38 +100,25 @@ def serve_audio(filename):
     logger.info(f"[TIMING] [REQ:{request_id}] Audio request received for: {filename}")
     
     try:
-        # Remove any file extension from the filename
-        base_name = filename.rsplit('.', 1)[0]
-        logger.info(f"[TIMING] [REQ:{request_id}] Requested audio for base name: {base_name}")
-        
         # Get audio directory from config
         audio_dir = current_app.config.get('AUDIO_DIR')
         if not audio_dir:
             raise ValueError("AUDIO_DIR not configured in application")
             
-        # Try to find the audio file using glob pattern
-        search_pattern = os.path.join(audio_dir, '*', f"{base_name}.opus")
-        matching_files = glob.glob(search_pattern)
+        # Construct the direct path to the audio file
+        audio_path = os.path.join(audio_dir, filename)
         
-        if matching_files:
-            audio_path = matching_files[0]
-            logger.info(f"[TIMING] [REQ:{request_id}] Found audio file: {audio_path}")
-            return send_range_file(audio_path, request_id)
+        # If file doesn't exist, try with URL-decoded version
+        if not os.path.exists(audio_path):
+            decoded_name = unquote(filename)
+            audio_path = os.path.join(audio_dir, decoded_name)
             
-        # If no match found, try with URL-decoded version
-        decoded_name = unquote(base_name)
-        logger.info(f"[TIMING] [REQ:{request_id}] Trying decoded name: {decoded_name}")
-        
-        search_pattern = os.path.join(audio_dir, '*', f"{decoded_name}.opus")
-        matching_files = glob.glob(search_pattern)
-        
-        if matching_files:
-            audio_path = matching_files[0]
-            logger.info(f"[TIMING] [REQ:{request_id}] Found audio file after decoding: {audio_path}")
-            return send_range_file(audio_path, request_id)
+        if not os.path.exists(audio_path):
+            logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found for: {filename}")
+            return f"Audio file not found for {filename}", 404
             
-        logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found for: {filename}")
-        return f"Audio file not found for {filename}", 404
+        logger.info(f"[TIMING] [REQ:{request_id}] Found audio file: {audio_path}")
+        return send_range_file(audio_path, request_id)
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
