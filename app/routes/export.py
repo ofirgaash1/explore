@@ -90,8 +90,8 @@ def export_source_files(source):
         download_name=f'{source}.{file_info["audio_format"]}'
     )
 
-@bp.route('/export/segment/<source>')
-def export_segment(source):
+@bp.route('/export/segment/<source>/<path:filename>')
+def export_segment(source, filename):
     start_time = float(request.args.get('start', 0))
     end_time = float(request.args.get('end', 0))
     
@@ -104,20 +104,16 @@ def export_segment(source):
         if not audio_dir:
             raise ValueError("AUDIO_DIR not configured in application")
             
-        # Try to find the audio file using glob pattern
-        search_pattern = os.path.join(audio_dir, '*', f"{source}.opus")
-        matching_files = glob.glob(search_pattern)
+        # Construct the direct path to the audio file
+        audio_path = os.path.join(audio_dir, source, f'{filename}.opus')
         
-        if not matching_files:
-            # If no match found, try with URL-decoded version
-            decoded_name = unquote(source)
-            search_pattern = os.path.join(audio_dir, '*', f"{decoded_name}.opus")
-            matching_files = glob.glob(search_pattern)
+        # If file doesn't exist, try with URL-decoded version
+        if not os.path.exists(audio_path):
+            decoded_name = unquote(filename)
+            audio_path = os.path.join(audio_dir, source, f'{decoded_name}.opus')
             
-            if not matching_files:
-                return "Source not found", 404
-        
-        audio_path = matching_files[0]
+        if not os.path.exists(audio_path):
+            return "Source not found", 404
         
         # Create a temporary buffer for the output
         buffer = io.BytesIO()
@@ -137,7 +133,7 @@ def export_segment(source):
             '-ss', str(start_time),
             '-to', str(end_time),
             '-acodec', 'libmp3lame',
-            '-ab', '192k',
+            '-ab', '64k',
             '-f', 'mp3',
             '-'
         ]
@@ -149,14 +145,14 @@ def export_segment(source):
             stderr=subprocess.PIPE
         )
         
-        # Get the output and any errors
-        output, errors = process.communicate()
+        # Read the output
+        output, error = process.communicate()
         
         if process.returncode != 0:
-            logger.error(f"ffmpeg error: {errors.decode()}")
-            return "Error processing audio segment", 500
+            logger.error(f"FFmpeg error: {error.decode()}")
+            return "Error processing audio", 500
             
-        # Write the output to our buffer
+        # Write the output to the buffer
         buffer.write(output)
         buffer.seek(0)
         
@@ -164,8 +160,9 @@ def export_segment(source):
             buffer,
             mimetype='audio/mpeg',
             as_attachment=True,
-            download_name=f'{source}_segment_{start_time:.2f}-{end_time:.2f}.mp3'
+            download_name=f'{source}_{filename}_{start_time:.2f}-{end_time:.2f}.mp3'
         )
+        
     except Exception as e:
-        logger.error(f"Error in export_segment: {str(e)}")
+        logger.error(f"Error exporting segment: {str(e)}")
         return f"Error: {str(e)}", 500 

@@ -100,7 +100,8 @@
           <div class="result-text-container">
             <div class="result-actions">
               <a href="{{ url_for('export.export_segment',
-                                source=source,
+                                source=source.split('/')[0],
+                                filename=source.split('/')[1] if '/' in source else source,
                                 start=result.start_sec,
                                 end=result.end_sec) }}"
                  class="btn btn-export">ייצא אודיו</a>
