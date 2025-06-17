@@ -35,7 +35,12 @@ def create_app(data_dir: str, index_file: str = None):
     
     # Set secret key for session
     app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-key')
-    
+   
+    # Initialize Google OAuth
+    from .routes.auth import init_oauth, bp as auth_bp
+    google = init_oauth(app)
+    app.extensions['google_oauth'] = google
+ 
     # Register blueprints
     from .routes import main, search, auth, export, audio
     app.register_blueprint(main.bp)
