@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 def send_range_file(path, request_id=None):
     start_time = time.time()
     if request_id:
-        logger.info(f"[TIMING] [REQ:{request_id}] Starting to send file: {path}")
+        logger.debug(f"[TIMING] [REQ:{request_id}] Starting to send file: {path}")
     
     range_header = request.headers.get('Range', None)
     if not os.path.exists(path):
@@ -42,7 +42,7 @@ def send_range_file(path, request_id=None):
                 length = byte2 - byte1 + 1
                 
                 if request_id:
-                    logger.info(f"[TIMING] [REQ:{request_id}] Serving range request: bytes {byte1}-{byte2}/{size}")
+                    logger.debug(f"[TIMING] [REQ:{request_id}] Serving range request: bytes {byte1}-{byte2}/{size}")
                 
                 f.seek(byte1)
                 remaining = length
@@ -54,7 +54,7 @@ def send_range_file(path, request_id=None):
                     yield chunk
             else:
                 if request_id:
-                    logger.info(f"[TIMING] [REQ:{request_id}] Serving full file: {size} bytes")
+                    logger.debug(f"[TIMING] [REQ:{request_id}] Serving full file: {size} bytes")
                 
                 while True:
                     chunk = f.read(chunk_size)
@@ -76,7 +76,7 @@ def send_range_file(path, request_id=None):
             
             if request_id:
                 duration_ms = (time.time() - start_time) * 1000
-                logger.info(f"[TIMING] [REQ:{request_id}] Range file served in {duration_ms:.2f}ms")
+                logger.debug(f"[TIMING] [REQ:{request_id}] Range file served in {duration_ms:.2f}ms")
             
             return resp
 
@@ -87,17 +87,17 @@ def send_range_file(path, request_id=None):
     
     if request_id:
         duration_ms = (time.time() - start_time) * 1000
-        logger.info(f"[TIMING] [REQ:{request_id}] Full file served in {duration_ms:.2f}ms")
+        logger.debug(f"[TIMING] [REQ:{request_id}] Full file served in {duration_ms:.2f}ms")
     
     return resp
 
-@bp.route('/audio/<source>/<path:filename>')
+@bp.route('/audio/<path:filename>')
 @login_required
-def serve_audio(source, filename):
+def serve_audio(filename):
     request_id = str(uuid.uuid4())[:8]
     start_time = time.time()
     
-    logger.info(f"[TIMING] [REQ:{request_id}] Audio request received for: {source}/{filename}")
+    logger.debug(f"[TIMING] [REQ:{request_id}] Audio request received for: {filename}")
     
     try:
         # Get audio directory from config
@@ -106,23 +106,23 @@ def serve_audio(source, filename):
             raise ValueError("AUDIO_DIR not configured in application")
             
         # Construct the direct path to the audio file
-        audio_path = os.path.join(audio_dir, source, filename)
+        audio_path = os.path.join(audio_dir, filename)
         
         # If file doesn't exist, try with URL-decoded version
         if not os.path.exists(audio_path):
             decoded_name = unquote(filename)
-            audio_path = os.path.join(audio_dir, source, decoded_name)
+            audio_path = os.path.join(audio_dir, decoded_name)
             
         if not os.path.exists(audio_path):
-            logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found for: {source}/{filename}")
-            return f"Audio file not found for {source}/{filename}", 404
+            logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found for: {filename}")
+            return f"Audio file not found for {filename}", 404
             
-        logger.info(f"[TIMING] [REQ:{request_id}] Found audio file: {audio_path}")
+        logger.debug(f"[TIMING] [REQ:{request_id}] Found audio file: {audio_path}")
         return send_range_file(audio_path, request_id)
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
-        logger.error(f"[TIMING] [REQ:{request_id}] Error serving audio file {source}/{filename}: {str(e)} after {duration_ms:.2f}ms")
+        logger.error(f"[TIMING] [REQ:{request_id}] Error serving audio file {filename}: {str(e)} after {duration_ms:.2f}ms")
         import traceback
         traceback.print_exc()
         return f"Error: {str(e)}", 404
