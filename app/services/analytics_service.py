@@ -39,10 +39,11 @@ class AnalyticsService:
         """Capture an event with properties"""
         if self.disabled:
             return
-        
+              
         # Initialize properties if None
         properties = properties or {}
-        
+        properties['source'] = 'explore.ivrit.ai'
+
         # Add user email to properties if available in session
         if 'user_email' in session:
             properties['user_email'] = session['user_email']

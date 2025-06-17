@@ -33,6 +33,7 @@ def search():
     query      = request.args.get('q', '').strip()
     per_page   = int(request.args.get('max_results_per_page', 100))
     page       = max(1, int(request.args.get('page', 1)))
+    start_time = time.time()
 
     global search_service, file_service
     if file_service is None:
@@ -70,6 +71,19 @@ def search():
         "has_prev": page > 1,
         "has_next": end_i < total,
     }
+
+    # Track search analytics
+    execution_time_ms = (time.time() - start_time) * 1000
+    analytics = current_app.config.get('ANALYTICS_SERVICE')
+    if analytics:
+        analytics.capture_search(
+            query=query,
+            max_results_per_page=per_page,
+            page=page,
+            execution_time_ms=execution_time_ms,
+            results_count=len(records),
+            total_results=total
+        )
 
     if request.headers.get('Accept') == 'application/json':
         return jsonify({"results": records, "pagination": pagination})
