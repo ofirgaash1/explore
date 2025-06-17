@@ -92,7 +92,17 @@ function loadAudio(placeholder) {
     const fmt   = placeholder.dataset.format || 'opus';
     const start = parseFloat(placeholder.dataset.start) || 0;
     const end = parseFloat(placeholder.dataset.end) || 0;
-    const audioUrl = `/audio/${srcId}.${fmt}#t=${start}`;
+    // Split srcId at the first slash to get source and filename
+    let source = srcId;
+    let filename = '';
+    if (srcId.includes('/')) {
+        const parts = srcId.split('/');
+        source = parts[0];
+        filename = parts.slice(1).join('/');
+    } else {
+        filename = srcId;
+    }
+    const audioUrl = `/audio/${encodeURIComponent(source)}/${encodeURIComponent(filename)}.${fmt}#t=${start}`;
     const playerId = `audio-${srcId}-${start}`;
 
     timingLogger.start('audio_loading', { source_id: srcId, start_time: start, end_time: end });
@@ -332,7 +342,17 @@ document.addEventListener('DOMContentLoaded', () => {
         const start = parseFloat(item.dataset.start) || 0;
         const segIdx = parseInt(item.dataset.segId) || 0;
         const playerId = `audio-hit-${index}`;
-        const audioUrl = `/audio/${encodeURIComponent(srcId)}.opus#t=${start}`;
+        // Split srcId at the first slash to get source and filename
+        let source = srcId;
+        let filename = '';
+        if (srcId.includes('/')) {
+            const parts = srcId.split('/');
+            source = parts[0];
+            filename = parts.slice(1).join('/');
+        } else {
+            filename = srcId;
+        }
+        const audioUrl = `/audio/${encodeURIComponent(source)}/${encodeURIComponent(filename)}.opus#t=${start}`;
 
         const audioContainer = document.createElement('div');
         audioContainer.className = 'audio-container';

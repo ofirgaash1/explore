@@ -91,13 +91,13 @@ def send_range_file(path, request_id=None):
     
     return resp
 
-@bp.route('/audio/<path:filename>')
+@bp.route('/audio/<source>/<path:filename>')
 @login_required
-def serve_audio(filename):
+def serve_audio(source, filename):
     request_id = str(uuid.uuid4())[:8]
     start_time = time.time()
     
-    logger.info(f"[TIMING] [REQ:{request_id}] Audio request received for: {filename}")
+    logger.info(f"[TIMING] [REQ:{request_id}] Audio request received for: {source}/{filename}")
     
     try:
         # Get audio directory from config
@@ -106,23 +106,23 @@ def serve_audio(filename):
             raise ValueError("AUDIO_DIR not configured in application")
             
         # Construct the direct path to the audio file
-        audio_path = os.path.join(audio_dir, filename)
+        audio_path = os.path.join(audio_dir, source, filename)
         
         # If file doesn't exist, try with URL-decoded version
         if not os.path.exists(audio_path):
             decoded_name = unquote(filename)
-            audio_path = os.path.join(audio_dir, decoded_name)
+            audio_path = os.path.join(audio_dir, source, decoded_name)
             
         if not os.path.exists(audio_path):
-            logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found for: {filename}")
-            return f"Audio file not found for {filename}", 404
+            logger.error(f"[TIMING] [REQ:{request_id}] Audio file not found for: {source}/{filename}")
+            return f"Audio file not found for {source}/{filename}", 404
             
         logger.info(f"[TIMING] [REQ:{request_id}] Found audio file: {audio_path}")
         return send_range_file(audio_path, request_id)
         
     except Exception as e:
         duration_ms = (time.time() - start_time) * 1000
-        logger.error(f"[TIMING] [REQ:{request_id}] Error serving audio file {filename}: {str(e)} after {duration_ms:.2f}ms")
+        logger.error(f"[TIMING] [REQ:{request_id}] Error serving audio file {source}/{filename}: {str(e)} after {duration_ms:.2f}ms")
         import traceback
         traceback.print_exc()
         return f"Error: {str(e)}", 404
