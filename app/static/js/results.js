@@ -338,7 +338,7 @@ document.addEventListener('DOMContentLoaded', () => {
         item.dataset.hitIndex = index;
         
         // Create audio player for this hit
-        const srcId = decodeURIComponent(item.dataset.source);
+        const srcId = item.dataset.source;
         const start = parseFloat(item.dataset.start) || 0;
         const segIdx = parseInt(item.dataset.segId) || 0;
         const playerId = `audio-hit-${index}`;
