@@ -33,22 +33,35 @@ def export_results_csv(query):
     all_results = []
     for hit in hits:
         seg = search_service.segment(hit)
+        source_str = search_service._index_mgr.get().get_source_by_episode_idx(hit.episode_idx)
+        try:
+            # Split: "929/2016.04.06 פרקים למחשבה הרב משה הגר לאו"
+            prefix, _, title = source_str.partition(' ')
+            podcast_title, _, date = prefix.partition('/')
+        except Exception:
+            podcast_title, date, title = '', '', source_str  # fallback
+
         all_results.append({
             "episode_idx": hit.episode_idx,
-            "char_offset": hit.char_offset,
-            "source": search_service._index_mgr.get().get_source_by_episode_idx(hit.episode_idx),
+            "podcast_title": podcast_title,
+            "date": date,
+            "episode_title": title,
             "segment_idx": seg.seg_idx,
             "start": seg.start_sec,
             "end": seg.end_sec,
             "text": seg.text
-        })
+            })
+
     
     # Create CSV in memory with UTF-8 BOM for Excel compatibility
     output = io.StringIO()
     output.write('\ufeff')  # UTF-8 BOM
     writer = csv.writer(output, dialect='excel')
-    writer.writerow(['Source', 'Text', 'Start Time', 'End Time'])
-    
+    writer.writerow([
+    'Episode Index', 'Podcast Title', 'Date', 'Episode Title',
+    'Text', 'Start Time', 'End Time'
+    ])
+
     for r in all_results:
         text = r['text'].encode('utf-8', errors='replace').decode('utf-8')
         writer.writerow([r['source'], text, r['start'], r['end']])
@@ -85,7 +98,10 @@ def export_segment(source, filename):
         logger.info(f"Exporting segment: {source}/{filename}")
         audio_path = resolve_audio_path(f'{source}/{filename}.opus')
         if not audio_path:
+            logger.error(f"Audio file not found. Tried paths: {possible_paths}")
             return "Source not found", 404
+        
+        logger.info(f"Found audio file: {audio_path}")
         
         # Create a temporary buffer for the output
         buffer = io.BytesIO()
