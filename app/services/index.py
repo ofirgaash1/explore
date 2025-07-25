@@ -11,6 +11,8 @@ import gzip
 import orjson
 from tqdm.auto import tqdm
 import itertools
+from datetime import datetime
+
 
 from ..utils import FileRecord
 from .db import DatabaseService
@@ -50,7 +52,7 @@ class TranscriptIndex:
     def get_document_info(self, doc_id: int) -> dict:
         """Get document information including source, episode, and text."""
         cursor = self._db.execute(
-            "SELECT doc_id, source, episode, full_text FROM documents WHERE doc_id = ?", 
+                "SELECT doc_id, source, episode, episode_date, episode_title, full_text FROM documents WHERE doc_id = ?", 
             [doc_id]
         )
         result = cursor.fetchone()
@@ -60,7 +62,9 @@ class TranscriptIndex:
             "doc_id": result[0],
             "source": result[1],
             "episode": result[2],
-            "full_text": result[3]
+            "episode_date": result[3],
+            "episode_title": result[4],
+            "full_text": result[5]
         }
     
     def get_segments_for_document(self, doc_id: int) -> list[dict]:
@@ -251,6 +255,8 @@ def _setup_schema(db: DatabaseService):
             doc_id INTEGER PRIMARY KEY,
             source VARCHAR,
             episode VARCHAR,
+            episode_date DATE,
+            episode_title TEXT,
             full_text TEXT
         )
     """)
@@ -352,6 +358,20 @@ class IndexManager:
 
         return TranscriptIndex(db)
 
+    @staticmethod
+    def split_episode(episode_str: str) -> tuple[str, str]:
+        """Split '2022.11.17 קטרקט' into ('2022-11-17', 'קטרקט')"""
+        parts = episode_str.strip().split(' ', 1)
+        raw_date = parts[0]
+        try:
+            # Convert from 'YYYY.MM.DD' to 'YYYY-MM-DD'
+            iso_date = datetime.strptime(raw_date, "%Y.%m.%d").date().isoformat()
+        except Exception:
+            iso_date = None
+
+        episode_title = parts[1] if len(parts) > 1 else ""
+        return iso_date, episode_title
+    
     def _load_and_convert(self, rec_idx: int, rec: FileRecord) -> Tuple[int, str, dict, float, float]:
         """Load and convert a single record, with timing."""
         t0 = time.perf_counter()
@@ -406,11 +426,14 @@ class IndexManager:
                     # Start transaction for this document
                     db.execute("BEGIN TRANSACTION")
                     
+                    episode_date, episode_title = self.split_episode(rec_id)
+
                     db.execute(
-                        "INSERT INTO documents (doc_id, source, episode, full_text) VALUES (?, ?, ?, ?)",
-                        [doc_id, rec_id, rec_id, data["full"]]
+                        """INSERT INTO documents 
+                        (doc_id, source, episode, episode_date, episode_title, full_text) 
+                        VALUES (?, ?, ?, ?, ?, ?)""",
+                        [doc_id, rec_id, rec_id, episode_date, episode_title, data["full"]]
                     )
-                    
                     # Insert all segments for this document in one batch
                     # Prepare batch insert for segments
                     segment_values = []
