@@ -253,6 +253,66 @@ def test_index_generation(data_dir: str, output_db: str):
         print(f"❌ Error during index generation: {e}")
         import traceback
         traceback.print_exc()
+def check_nulls_and_empties(db_path: str, show_samples: int = 3):
+    """Report NULL / empty-string values per column and print first N offending samples."""
+    print("\n🧪 Scanning for NULL / empty values in all tables/columns")
+    try:
+        conn = sqlite3.connect(db_path)
+        cur = conn.cursor()
+
+        # all tables
+        cur.execute("SELECT name FROM sqlite_master WHERE type='table'")
+        tables = [r[0] for r in cur.fetchall()]
+        if not tables:
+            print("❌ No tables found")
+            return
+
+        for table in tables:
+            # columns & declared types
+            cur.execute(f"PRAGMA table_info({table})")
+            cols = [(r[1], (r[2] or '').upper()) for r in cur.fetchall()]
+            if not cols:
+                continue
+
+            print(f"\n📌 Table: {table}")
+            any_issue = False
+            for col, decl_type in cols:
+                # Build condition: NULL always; empty only for text-like cols
+                is_text = any(t in decl_type for t in ("CHAR", "CLOB", "TEXT"))
+                if is_text:
+                    cond = f"{col} IS NULL OR TRIM({col}) = ''"
+                else:
+                    cond = f"{col} IS NULL"
+
+                # count how many
+                cur.execute(f"SELECT COUNT(*) FROM {table} WHERE {cond}")
+                bad_cnt = cur.fetchone()[0]
+
+                if bad_cnt > 0:
+                    any_issue = True
+                    print(f"  - {col}: {bad_cnt} NULL/empty values")
+                    # offending samples
+                    cur.execute(f"SELECT rowid, {col} FROM {table} WHERE {cond} LIMIT {show_samples}")
+                    rows = cur.fetchall()
+                    for rid, val in rows:
+                        print(f"      rowid={rid}, value={repr(val)}")
+
+                    # also print first N *valid* values for quick sanity check
+                    cur.execute(
+                        f"SELECT {col} FROM {table} "
+                        f"WHERE {col} IS NOT NULL {'AND TRIM({}) <> '''.format(col) if is_text else ''} "
+                        f"LIMIT {show_samples}"
+                    )
+                    good = [r[0] for r in cur.fetchall()]
+                    if good:
+                        print(f"      first {show_samples} non-empty samples: {good}")
+            if not any_issue:
+                print("  👍 No NULL/empty fields found")
+
+        conn.close()
+    except sqlite3.Error as e:
+        print(f"❌ Error while scanning nulls/empties: {e}")
+
 
 def main():
     """Main debugging function."""
@@ -274,6 +334,7 @@ def main():
     if db_exists:
         # Inspect existing database
         inspect_database_structure(db_path)
+        check_nulls_and_empties(db_path)
     else:
         print("\n📝 No existing database found, will test index generation")
     
