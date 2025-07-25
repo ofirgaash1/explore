@@ -13,14 +13,20 @@ class ExportService:
         output = io.StringIO()
         output.write('\ufeff')  # UTF-8 BOM for Excel compatibility
         writer = csv.writer(output, dialect='excel')
-        writer.writerow(['Source', 'Text', 'Start Time', 'End Time'])
+    
+        writer.writerow(['Source', 'Date', 'Title', 'Text', 'Start Time', 'End Time'])
         
         for result in results:
-            text = result['text'].encode('utf-8', errors='replace').decode('utf-8')
+            text = result.get('text', '').encode('utf-8', errors='replace').decode('utf-8')
+            # Support new schema: get date and title if present, else fallback to empty string
+            date = result.get('date', result.get('episode_date', ''))
+            title = result.get('title', result.get('episode_title', ''))
             writer.writerow([
-                result['source'],
+                result.get('source', ''),
+                date,
+                title,
                 text,
-                result['start'],
+                result.get('start', ''),
                 result.get('end', '')
             ])
         

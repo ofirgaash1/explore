@@ -33,24 +33,24 @@ def export_results_csv(query):
     all_results = []
     for hit in hits:
         seg = search_service.segment(hit)
-        source_str = search_service._index_mgr.get().get_source_by_episode_idx(hit.episode_idx)
-        try:
-            # Split: "929/2016.04.06 פרקים למחשבה הרב משה הגר לאו"
-            prefix, _, title = source_str.partition(' ')
-            podcast_title, _, date = prefix.partition('/')
-        except Exception:
-            podcast_title, date, title = '', '', source_str  # fallback
+        # Use new scheme: get document info from index
+        doc_info = search_service._index_mgr.get().get_document_by_episode_idx(hit.episode_idx)
+        source_str = doc_info.get("source", "")
+        episode_title = doc_info.get("episode_title", "")
+        date = doc_info.get("episode_date", "")
+        podcast_title = source_str  # If you want to keep podcast_title as source, or adjust as needed
 
         all_results.append({
+            "source": source_str,
             "episode_idx": hit.episode_idx,
             "podcast_title": podcast_title,
             "date": date,
-            "episode_title": title,
+            "episode_title": episode_title,
             "segment_idx": seg.seg_idx,
             "start": seg.start_sec,
             "end": seg.end_sec,
             "text": seg.text
-            })
+        })
 
     
     # Create CSV in memory with UTF-8 BOM for Excel compatibility
@@ -63,8 +63,16 @@ def export_results_csv(query):
     ])
 
     for r in all_results:
-        text = r['text'].encode('utf-8', errors='replace').decode('utf-8')
-        writer.writerow([r['source'], text, r['start'], r['end']])
+        text = r.get('text', '').encode('utf-8', errors='replace').decode('utf-8')
+        writer.writerow([
+            r.get('episode_idx', ''),
+            r.get('podcast_title', ''),
+            r.get('date', ''),
+            r.get('episode_title', ''),
+            text,
+            r.get('start', ''),
+            r.get('end', '')
+        ])
     
     execution_time = (time.time() - start_time) * 1000
     
