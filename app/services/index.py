@@ -12,7 +12,7 @@ import orjson
 from tqdm.auto import tqdm
 import itertools
 from datetime import datetime
-
+import re
 
 from ..utils import FileRecord
 from .db import DatabaseService
@@ -359,18 +359,27 @@ class IndexManager:
         return TranscriptIndex(db)
 
     @staticmethod
-    def split_episode(episode_str: str) -> tuple[str, str]:
-        """Split '2022.11.17 קטרקט' into ('2022-11-17', 'קטרקט')"""
-        parts = episode_str.strip().split(' ', 1)
-        raw_date = parts[0]
+    def split_episode(episode_str: str) -> tuple[Optional[str], str]:
+        """
+        Input:  '{SOURCE}/YYYY.MM.DD {TITLE}'
+        Output: (ISO date 'YYYY-MM-DD' or None, title)
+        """
+        # take last component after the last '/'
+        leaf = episode_str.rsplit('/', 1)[-1].strip()
+
+        # date at the beginning, optional title after whitespace
+        m = re.match(r'^(?P<date>\d{4}[.\-]\d{2}[.\-]\d{2})\s*(?P<title>.*)$', leaf)
+        if not m:
+            return None, leaf  # couldn't parse date, keep whole leaf as title
+
+        raw_date = m.group('date').replace('.', '-')
         try:
-            # Convert from 'YYYY.MM.DD' to 'YYYY-MM-DD'
-            iso_date = datetime.strptime(raw_date, "%Y.%m.%d").date().isoformat()
-        except Exception:
+            iso_date = datetime.strptime(raw_date, "%Y-%m-%d").date().isoformat()
+        except ValueError:
             iso_date = None
 
-        episode_title = parts[1] if len(parts) > 1 else ""
-        return iso_date, episode_title
+        title = m.group('title').strip()
+        return iso_date, title
     
     def _load_and_convert(self, rec_idx: int, rec: FileRecord) -> Tuple[int, str, dict, float, float]:
         """Load and convert a single record, with timing."""
@@ -427,12 +436,12 @@ class IndexManager:
                     db.execute("BEGIN TRANSACTION")
                     
                     episode_date, episode_title = self.split_episode(rec_id)
-
+                    source = rec_id.rsplit('/', 1)[0]
                     db.execute(
                         """INSERT INTO documents 
                         (doc_id, source, episode, episode_date, episode_title, full_text) 
                         VALUES (?, ?, ?, ?, ?, ?)""",
-                        [doc_id, rec_id, rec_id, episode_date, episode_title, data["full"]]
+                        [doc_id, source, rec_id, episode_date, episode_title, data["full"]]
                     )
                     # Insert all segments for this document in one batch
                     # Prepare batch insert for segments
