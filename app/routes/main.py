@@ -7,6 +7,7 @@ import os
 import logging
 import uuid
 from ..services.index import IndexManager
+from collections import defaultdict
 
 logger = logging.getLogger(__name__)
 
@@ -57,14 +58,33 @@ def search():
     records = []
     for h in page_hits:
         seg = search_service.segment(h)
+        doc_info = search_service._index_mgr.get().get_document_info(h.episode_idx)
         records.append({
             "episode_idx":  h.episode_idx,
             "char_offset":  h.char_offset,
-            "recording_id": search_service._index_mgr.get().get_source_by_episode_idx(h.episode_idx),
-            "source":       search_service._index_mgr.get().get_source_by_episode_idx(h.episode_idx),
+            "recording_id": doc_info.get("source", ""),
+            "source":       doc_info.get("source", ""),
             "segment_idx":  seg.seg_idx,
             "start_sec":    seg.start_sec,
             "end_sec":      seg.end_sec,
+            "episode_title": doc_info.get("episode_title", ""),
+            "episode_date": doc_info.get("episode_date", ""),
+        })
+
+    # Group results by (source, episode_idx)
+    grouped = defaultdict(list)
+    for r in records:
+        grouped[(r['source'], r['episode_idx'])].append(r)
+
+    display_groups = []
+    for (source, episode_idx), group in grouped.items():
+        meta = group[0]
+        display_groups.append({
+            'source': source,
+            'episode_idx': episode_idx,
+            'episode_title': meta.get('episode_title', ''),
+            'episode_date': meta.get('episode_date', ''),
+            'results': group,
         })
 
     pagination = {
@@ -94,7 +114,7 @@ def search():
 
     return render_template('results.html',
                            query=query,
-                           results=records,
+                           results=display_groups,
                            pagination=pagination,
                            max_results_per_page=per_page)
 

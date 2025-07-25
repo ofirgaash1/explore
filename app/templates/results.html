@@ -63,33 +63,37 @@
 <div class="results">
 
   {# group the flat results list by 'source' (== recording ID) #}
-  {% for source, source_results in results|groupby('source') %}
+  {% for group in results %}
   <div class="source-group">
 
-    {# ─────── source header (clickable) ─────── #}
-    <div class="source-header"
-      onclick='toggleSource({{ source|tojson }})'>
-      <span class="toggle-icon" id="icon-{{ source }}">▶</span>
-      <span class="source-title">{{ source|replace('/', ': ') }}</span>
-      <span class="result-count">{{ source_results|length }} תוצאות</span>
-
-      <div class="source-actions">
+    <div class="source-header" onclick="toggleSource('{{ group.source }}')">
+      <span class="toggle-icon" id="icon-{{ group.source }}">▶</span>
+    
+      <!-- put all textual meta in one wrapper so Flex/Grid can treat it as a unit -->
+      <div class="meta">
+        <span class="source-title">{{ group.source|replace('/', ': ') }}</span>
+        <span class="episode-title">{{ group.episode_title }}</span>
+        <span class="episode-date">{{ group.episode_date }}</span>
       </div>
-
-      {# Direct audio container instead of placeholder #}
+    
+      <!-- compact counter badge -->
+      <span class="result-count">{{ group.results|length }} תוצאות</span>
+    
+      <!-- leave the player placeholder last so it hugs the left in RTL -->
       <div class="audio-container source-audio-container"
-           data-source="{{ source|urlencode }}"
+           data-source="{{ group.source|urlencode }}"
            data-format="opus"
-           data-start="{{ source_results[0].start_sec if source_results else 0 }}"
-           data-end="{{ source_results[-1].end_sec if source_results else 0 }}">
+           data-start="{{ group.results[0].start_sec if group.results else 0 }}"
+           data-end="{{ group.results[-1].end_sec if group.results else 0 }}">
       </div>
     </div>
+    
 
     {# ─────── individual hits for this source ─────── #}
-    <div id="{{ source }}-results" style="display:none">
-      {% for result in source_results %}
+    <div id="{{ group.source }}-results" style="display:none">
+      {% for result in group.results %}
       <div class="result-item"
-           data-source="{{ source }}"
+           data-source="{{ group.source }}"
            data-epi="{{ result.episode_idx }}"
            data-char="{{ result.char_offset }}"
            data-seg="{{ result.segment_idx }}"
@@ -100,8 +104,8 @@
           <div class="result-text-container">
             <div class="result-actions">
               <a href="{{ url_for('export.export_segment',
-                                source=source.split('/')[0],
-                                filename=source.split('/')[1] if '/' in source else source,
+                                source=group.source.split('/')[0],
+                                filename=group.source.split('/')[1] if '/' in group.source else group.source,
                                 start=result.start_sec,
                                 end=result.end_sec) }}"
                  class="btn btn-export">ייצא אודיו</a>

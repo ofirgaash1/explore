@@ -1,3 +1,10 @@
+/* ------------------------------------------------------------------
+   Global / unchanged bits (header, search-form, stats, etc.)
+   ------------------------------------------------------------------ */
+   .header         { margin-bottom: 1.5rem; }
+   .back-link      { color:#4299e1; text-decoration:none; display:inline-flex; align-items:center; margin-bottom:0.5rem; font-weight:500; }
+
+/* ------------------------------------------------------------------
 /* Modern results page styling */
 .header {
     margin-bottom: 1.5rem;
@@ -65,77 +72,81 @@
     margin-left: 0.5rem;
 }
 
-/* Modern source group styling */
-.source-group {
-    background: white;
-    border-radius: 12px;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-    margin-bottom: 1rem;
-    overflow: hidden;
-    position: relative;
+/* ------------------------------------------------------------------
+   Modern source group styling
+   ------------------------------------------------------------------ */
+   .source-group {
+    background:#fff;
+    border-radius:12px;
+    box-shadow:0 2px 4px rgba(0,0,0,.1);
+    margin-bottom:1rem;
+    overflow:hidden;
 }
+.source-group + .source-group { margin-top:2rem; }
 
-.source-group + .source-group {
-    margin-top: 2rem;
-}
 
+/* ==========  Source header (new)  ========== */
 .source-header {
+    direction: rtl;                     /* Hebrew first */
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;                       /* uniform spacing */
+    padding: 0.6rem 1rem;
+    cursor: pointer;
+
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:8px;
+    transition: background .15s ease, box-shadow .15s ease;
+}
+.source-header:hover { background:#f7fafc; box-shadow:0 1px 3px rgba(0,0,0,.06); }
+
+/* arrow */
+.toggle-icon {
+    font-size: .9rem;
+    margin-inline-start: .25rem;        /* RTL-safe margin on left in visual flow */
+    color:#4299e1;
+    transition: transform .15s;
+}
+/* JS can add/remove .open to rotate arrow */
+.source-header.open .toggle-icon { transform: rotate(90deg); }
+
+/* wrapper for titles + date so flex can treat as one chunk */
+.source-header .meta {
     display: flex;
     flex-wrap: wrap;
-    align-items: center;
-    padding: 1rem 1.5rem;
-    cursor: pointer;
-    transition: background-color 0.2s, box-shadow 0.3s;
-    border-bottom: 1px solid #e2e8f0;
-    background-color: white;
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    width: 100%;
-    box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    border-radius: 12px 12px 0 0;
+    gap: .5rem;
+    font-size: .85rem;
+    line-height: 1.4;
 }
+.source-title   { font-weight:600; color:#2d3748; }
+.episode-title  { color:#4a5568; }
+.episode-date   { color:#999; }
 
-.source-header:hover {
-    background-color: #f7fafc;
-}
-
-.toggle-icon {
-    color: #4299e1;
-    margin-right: 0.75rem;
-    font-size: 0.9rem;
-    transition: transform 0.2s;
-}
-
-.source-title {
-    font-weight: 600;
-    color: #2d3748;
-    flex: 1;
-}
-
+/* pill-style counter */
 .result-count {
-    color: #718096;
-    font-size: 0.9rem;
-    margin: 0 1rem;
+    font-size: .75rem;
+    background:#ececec;
+    color:#4a5568;
+    padding: .1rem .5rem;
+    border-radius:999px;
+    white-space: nowrap;
 }
 
-.source-actions {
-    display: flex;
-    gap: 0.5rem;
-}
-
-/* Source header audio player styling */
+/* keep player stub fixed width to avoid layout jump */
 .source-header .audio-container {
-    margin-top: 0.5rem;
-    width: 100%;
-    padding: 0.5rem 0.5rem 0 0;
-    position: relative;
-    z-index: 10;
+    width: 90px;               /* tweak to player size */
+    flex: 0 0 auto;
+    margin-inline-start: .75rem;
 }
 
-.source-header .audio-placeholder {
-    display: none; /* Hide placeholder initially */
-}
+/* optional – hide legacy action buttons (remove if you still use them) */
+.source-actions { display:none; }
+
+/* Result-item rows -------------------------------------------------- */
+.result-item      { padding:1rem 1.5rem; border-bottom:1px solid #edf2f7; transition:background-color .2s; }
+.result-item:last-child { border-bottom:none; }
+.result-item:hover{ background:#f7fafc; }
 
 .result-content {
     display: flex;
