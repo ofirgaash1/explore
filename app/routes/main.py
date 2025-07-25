@@ -62,7 +62,7 @@ def search():
         records.append({
             "episode_idx":  h.episode_idx,
             "char_offset":  h.char_offset,
-            "recording_id": doc_info.get("source", ""),
+            "episode": doc_info.get("episode", ""),
             "source":       doc_info.get("source", ""),
             "segment_idx":  seg.seg_idx,
             "start_sec":    seg.start_sec,
@@ -84,6 +84,7 @@ def search():
             'episode_idx': episode_idx,
             'episode_title': meta.get('episode_title', ''),
             'episode_date': meta.get('episode_date', ''),
+            'episode': meta.get('episode', ''),
             'results': group,
         })
 

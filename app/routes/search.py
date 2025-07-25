@@ -28,6 +28,7 @@ def search():
             "episode_idx": h.episode_idx,
             "char_offset": h.char_offset,
             "source": doc_info.get("source", ""),
+            "episode": doc_info.get("episode", ""),
             "episode_title": doc_info.get("episode_title", ""),
             "episode_date": doc_info.get("episode_date", ""),
             "segment_idx": seg.seg_idx,

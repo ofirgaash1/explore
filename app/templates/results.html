@@ -66,8 +66,8 @@
   {% for group in results %}
   <div class="source-group">
 
-    <div class="source-header" onclick="toggleSource('{{ group.source|urlencode }}')">
-      <span class="toggle-icon" id="icon-{{ group.source }}">▶</span>
+    <div class="source-header" onclick="toggleSource('{{ group.episode|tojson }}')">
+      <span class="toggle-icon" id="icon-{{ group.episode }}">▶</span>
     
       <!-- put all textual meta in one wrapper so Flex/Grid can treat it as a unit -->
       <div class="meta">
@@ -81,7 +81,7 @@
     
       <!-- leave the player placeholder last so it hugs the left in RTL -->
       <div class="audio-container source-audio-container"
-           data-source="{{ group.source|urlencode }}"
+           data-source="{{ group.episode|urlencode }}"
            data-format="opus"
            data-start="{{ group.results[0].start_sec if group.results else 0 }}"
            data-end="{{ group.results[-1].end_sec if group.results else 0 }}">
