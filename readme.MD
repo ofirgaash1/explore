@@ -30,18 +30,35 @@ The application provides a CLI for managing index files:
 
 You can run the web application in two modes:
 
-1. Building index on-the-fly (default):
-   ```bash
-   export FLASK_APP=app
-   flask run
-   ```
 
-2. Using a pre-generated index file:
-   ```bash
-   export FLASK_APP=app
-   export INDEX_FILE=/path/to/explore-index.json.gz
-   flask run
-   ```
+1. Building index on-the-fly (default)
+
+```bash
+# Linux / macOS
+export FLASK_APP="app:create_app('./data')"
+export FLASK_ENV=development
+export SECRET_KEY=dev-secret
+flask run
+
+# Windows PowerShell
+$env:FLASK_APP = "app:create_app('./data')"
+$env:FLASK_ENV = "development"
+$env:SECRET_KEY = "dev-secret"
+python -m flask run
+```
+
+2. Using a pre-generated index file
+
+```bash
+# Linux / macOS
+export FLASK_APP="app:create_app('./data', './explore-index.json.gz')"
+flask run
+
+# Windows PowerShell
+$env:FLASK_APP = "app:create_app('./data', './explore-index.json.gz')"
+python -m flask run
+```
+
 
 ## Environment Variables
 
